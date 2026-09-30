@@ -17,15 +17,19 @@ on:
       - "Cargo.toml"
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   check-version-bump:
     runs-on: ubuntu-latest
     outputs:
       minor_bumped: ${{ steps.check.outputs.minor_bumped }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           fetch-depth: 2
+          persist-credentials: false
 
       - id: check
         shell: bash
@@ -50,11 +54,15 @@ jobs:
     if: needs.check-version-bump.outputs.minor_bumped == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de
+        with:
+          toolchain: stable
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
 
       # The fixture crates pull in `slint`, which needs `fontconfig` at
       # build time (via `yeslogic-fontconfig-sys`, a system lib found

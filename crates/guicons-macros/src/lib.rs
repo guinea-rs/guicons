@@ -244,8 +244,8 @@ fn expand_family_variant_data(
             kind: image_kind(path),
             path: path.to_string_lossy().into_owned(),
         },
-        guicons_core::IconEntrySource::Iconify(id) => resolve_iconify_source(id)?,
-        guicons_core::IconEntrySource::Url(url) => resolve_url_source(url)?,
+        guicons_core::IconEntrySource::Iconify(id) => resolve_remote(&manifest, guicons_net::RemoteIcon::Iconify(id))?,
+        guicons_core::IconEntrySource::Url(url) => resolve_remote(&manifest, guicons_net::RemoteIcon::Url(url))?,
         guicons_core::IconEntrySource::Glyph(spec) => {
             let (font_family, codepoint) = guicons_core::parse_glyph_spec(spec, entry.key());
             ResolvedSource::Glyph { font_family, codepoint }
@@ -263,30 +263,36 @@ fn image_kind(path: &std::path::Path) -> &'static str {
     }
 }
 
-fn resolve_url_source(url: &str) -> Result<ResolvedSource> {
-    let start = manifest_dir()?;
-    let cache_path = guicons_net::url_cache_path(&start, url);
-    guicons_net::ensure_cached(&cache_path, url);
+fn resolve_remote(manifest: &guicons_core::IconManifest, icon: guicons_net::RemoteIcon<'_>) -> Result<ResolvedSource> {
+    let cache_path =
+        guicons_net::ensure_cached(manifest, icon).map_err(|e| Error::new(Span::call_site(), e.to_string()))?;
     Ok(ResolvedSource::Image {
         path: cache_path.to_string_lossy().into_owned(),
         kind: "Svg",
     })
 }
 
-fn resolve_iconify_source(id: &str) -> Result<ResolvedSource> {
-    let start = manifest_dir()?;
-    let cache_path = guicons_net::iconify_cache_path(&start, id);
-    guicons_net::ensure_cached(&cache_path, &guicons_net::iconify_url(id));
-    Ok(ResolvedSource::Image {
-        path: cache_path.to_string_lossy().into_owned(),
-        kind: "Svg",
-    })
-}
-
+/// Works without a manifest too: the cache is then the crate's workspace
+/// root, and nothing is painted.
 fn expand_iconify_literal(id: &str, color: Option<&Expr>, target: Target) -> Result<proc_macro2::TokenStream> {
-    let manifest = load_manifest(&manifest_dir()?.join("icons.gui.toml"))?;
-    let resolved = resolve_iconify_source(id)?;
-    let resolved = apply_paint(resolved, manifest.paint_for_iconify(id), color, id)?;
+    let icon = guicons_net::RemoteIcon::Iconify(id);
+    let (resolved, paint) = match manifest_dir() {
+        Ok(dir) => {
+            let manifest = load_manifest(&dir.join("icons.gui.toml"))?;
+            (resolve_remote(&manifest, icon)?, manifest.paint_for_iconify(id))
+        }
+        Err(_) => {
+            let crate_dir = PathBuf::from(
+                std::env::var_os("CARGO_MANIFEST_DIR")
+                    .ok_or_else(|| Error::new(Span::call_site(), "CARGO_MANIFEST_DIR is not set"))?,
+            );
+            let root = guicons_core::find_workspace_root_from(&crate_dir).unwrap_or(crate_dir);
+            let cache_path = guicons_net::ensure_cached_in_workspace(&root, icon)
+                .map_err(|e| Error::new(Span::call_site(), e.to_string()))?;
+            (ResolvedSource::Image { path: cache_path.to_string_lossy().into_owned(), kind: "Svg" }, None)
+        }
+    };
+    let resolved = apply_paint(resolved, paint, color, id)?;
     Ok(emit_for_target(resolved, target))
 }
 
@@ -336,11 +342,8 @@ fn emit_for_target(resolved: ResolvedSource, target: Target) -> proc_macro2::Tok
         },
         #[cfg(feature = "windows-reactor")]
         Target::WindowsReactor => match resolved {
-            ResolvedSource::Image { path, .. } => quote! {
-                guicons::windows_reactor::icon_builder(#path)
-            },
-            ResolvedSource::Painted { .. } => quote! {
-                guicons::windows_reactor::painted_icon_builder(#data_tokens)
+            ResolvedSource::Image { .. } | ResolvedSource::Painted { .. } => quote! {
+                guicons::windows_reactor::data_icon_builder(#data_tokens)
             },
             ResolvedSource::Glyph { codepoint, .. } => quote! {
                 guicons::windows_reactor::glyph_icon(#codepoint)

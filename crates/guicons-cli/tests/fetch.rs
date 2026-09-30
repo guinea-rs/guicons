@@ -11,6 +11,10 @@ fn write(dir: &Path, name: &str, content: &str) -> std::path::PathBuf {
     path
 }
 
+fn url_cache_path(workspace: &Path, url: &str) -> std::path::PathBuf {
+    guicons_net::RemoteIcon::Url(url).cache_path(&workspace.join(".cache").join("guicons")).unwrap()
+}
+
 /// Starts a mock HTTP server on an ephemeral local port that serves `body`
 /// to exactly one request, then shuts down. Returns the base URL and a
 /// join handle the caller should wait on after triggering the request.
@@ -44,11 +48,47 @@ fn already_cached_icons_are_skipped_without_force() {
         "<svg></svg>",
     );
 
-    let summary = guicons_cli::fetch(&manifest, dir.path(), false).unwrap();
+    let summary = guicons_cli::fetch(&manifest, false).unwrap();
     assert_eq!(summary.skipped, vec!["fluent:settings-24-regular"]);
     assert!(summary.fetched.is_empty());
     assert!(summary.failed.is_empty());
     assert!(summary.is_success());
+    assert_eq!(
+        fs::read_to_string(dir.path().join("icons.lock")).unwrap().lines().last().unwrap(),
+        format!("{}  iconify:fluent:settings-24-regular", guicons_net::sha256_hex(b"<svg></svg>"))
+    );
+}
+
+#[test]
+fn a_cached_icon_that_differs_from_the_lock_fails() {
+    let dir = tempdir().unwrap();
+    write(dir.path(), "Cargo.toml", "[workspace]\n");
+    let manifest = write(dir.path(), "icons.gui.toml", "[home]\niconify = \"mdi:home\"\n");
+    write(dir.path(), ".cache/guicons/mdi/home.svg", "<svg>tampered</svg>");
+    write(
+        dir.path(),
+        "icons.lock",
+        &format!("{}  iconify:mdi:home\n", guicons_net::sha256_hex(b"<svg></svg>")),
+    );
+
+    let summary = guicons_cli::fetch(&manifest, false).unwrap();
+    assert_eq!(summary.failed.len(), 1, "{summary:?}");
+    assert!(summary.failed[0].1.contains("doesn't match"), "{summary:?}");
+}
+
+#[test]
+fn a_pointer_manifest_fetches_into_the_real_manifests_workspace() {
+    let dir = tempdir().unwrap();
+    write(dir.path(), "Cargo.toml", "[workspace]\n");
+    write(dir.path(), "icons.gui.toml", "[home]\niconify = \"mdi:home\"\n");
+    write(dir.path(), "crates/app/Cargo.toml", "[package]\nname = \"app\"\n");
+    let pointer = write(dir.path(), "crates/app/icons.gui.toml", "root_manifest = \"../../icons.gui.toml\"\n");
+    write(dir.path(), ".cache/guicons/mdi/home.svg", "<svg></svg>");
+
+    let summary = guicons_cli::fetch(&pointer, false).unwrap();
+    assert_eq!(summary.skipped, vec!["mdi:home"], "{summary:?}");
+    assert!(dir.path().join("icons.lock").exists());
+    assert!(!dir.path().join("crates/app/.cache").exists());
 }
 
 #[test]
@@ -72,7 +112,7 @@ fn unreachable_url_is_reported_as_failed_not_a_panic() {
 
     // Both icons should fail to download, and both should be reported -
     // not just the first one, and no panic.
-    let summary = guicons_cli::fetch(&manifest, dir.path(), false).unwrap();
+    let summary = guicons_cli::fetch(&manifest, false).unwrap();
     assert!(summary.fetched.is_empty());
     assert!(summary.skipped.is_empty());
     assert_eq!(summary.failed.len(), 2);
@@ -89,15 +129,29 @@ fn fetch_downloads_a_url_source_from_a_real_http_response() {
     let url = format!("{base_url}/settings.svg");
     let manifest = write(dir.path(), "icons.gui.toml", &format!("[settings]\nurl = \"{url}\"\n"));
 
-    let summary = guicons_cli::fetch(&manifest, dir.path(), false).unwrap();
+    let summary = guicons_cli::fetch(&manifest, false).unwrap();
     handle.join().unwrap();
 
     assert_eq!(summary.fetched, vec![url.clone()]);
     assert!(summary.skipped.is_empty());
     assert!(summary.failed.is_empty(), "{:?}", summary.failed);
 
-    let cache_path = guicons_net::url_cache_path(dir.path(), &url);
-    assert_eq!(fs::read_to_string(&cache_path).unwrap(), svg);
+    assert_eq!(fs::read_to_string(url_cache_path(dir.path(), &url)).unwrap(), svg);
+}
+
+#[test]
+fn an_html_response_is_not_cached() {
+    let dir = tempdir().unwrap();
+    write(dir.path(), "Cargo.toml", "[workspace]\n");
+    let (base_url, handle) = spawn_mock_server("<!DOCTYPE html><html><body>captive portal</body></html>");
+    let url = format!("{base_url}/settings.svg");
+    let manifest = write(dir.path(), "icons.gui.toml", &format!("[settings]\nurl = \"{url}\"\n"));
+
+    let summary = guicons_cli::fetch(&manifest, false).unwrap();
+    handle.join().unwrap();
+
+    assert_eq!(summary.failed.len(), 1, "{summary:?}");
+    assert!(!url_cache_path(dir.path(), &url).exists());
 }
 
 #[test]
@@ -110,11 +164,11 @@ fn fetch_redownloads_a_cached_url_when_forced() {
     let url = format!("{base_url}/settings.svg");
     let manifest = write(dir.path(), "icons.gui.toml", &format!("[settings]\nurl = \"{url}\"\n"));
 
-    let cache_path = guicons_net::url_cache_path(dir.path(), &url);
+    let cache_path = url_cache_path(dir.path(), &url);
     fs::create_dir_all(cache_path.parent().unwrap()).unwrap();
     fs::write(&cache_path, "<svg>stale</svg>").unwrap();
 
-    let summary = guicons_cli::fetch(&manifest, dir.path(), true).unwrap();
+    let summary = guicons_cli::fetch(&manifest, true).unwrap();
     handle.join().unwrap();
 
     assert_eq!(summary.fetched, vec![url]);
@@ -135,6 +189,6 @@ fn manifest_parse_errors_are_returned_not_panicked_on() {
         "#,
     );
 
-    let errors = guicons_cli::fetch(&manifest, dir.path(), false).unwrap_err();
+    let errors = guicons_cli::fetch(&manifest, false).unwrap_err();
     assert!(!errors.is_empty());
 }

@@ -2,6 +2,7 @@
 name = "guicons-macros"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "Proc macros for guicons"
@@ -16,8 +17,8 @@ windows-reactor = []
 egui = []
 
 [dependencies]
-guicons-core = { path = "../guicons-core", version = "0.7.0" }
-guicons-net = { path = "../guicons-net", version = "0.7.0" }
+guicons-core = { path = "../guicons-core", version = "0.8.0" }
+guicons-net = { path = "../guicons-net", version = "0.8.0" }
 proc-macro2 = "1"
 quote = "1"
 syn = { version = "2", features = ["full", "parsing", "proc-macro"] }

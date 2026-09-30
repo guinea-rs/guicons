@@ -120,26 +120,6 @@ pub(crate) fn generate_rust_icon_registry_from_materialized(
         .collect::<Vec<_>>()
         .join("\n");
 
-    let path_arms = icons
-        .iter()
-        .map(|icon| match &icon.backend {
-            MaterializedIconBackend::Image { path, paint: Some(paint), .. } if !icon.dynamic => {
-                let light = path.to_string_lossy().replace('\\', "\\\\");
-                let dark = paint.dark_path.to_string_lossy().replace('\\', "\\\\");
-                format!(
-                    "        keys::{} => Some(match guicons::theme() {{ guicons::Theme::Light => \"{light}\", guicons::Theme::Dark => \"{dark}\" }}),",
-                    rust_const_name(&icon.key)
-                )
-            }
-            MaterializedIconBackend::Image { path, .. } if !icon.dynamic => {
-                let path = path.to_string_lossy().replace('\\', "\\\\");
-                format!("        keys::{} => Some(\"{path}\"),", rust_const_name(&icon.key))
-            }
-            _ => format!("        keys::{} => None,", rust_const_name(&icon.key)),
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
-
     let builders = generate_builders(icons);
 
     let slint_resolver = if slint_image_resolver {
@@ -149,7 +129,7 @@ pub(crate) fn generate_rust_icon_registry_from_materialized(
     };
 
     let windows_reactor_resolver = if windows_reactor_image_resolver {
-        "\npub fn resolve_image<'a>(icon: impl Into<IconRef<'a>>) -> windows_reactor::Image {\n    resolve_path(icon).map(guicons::windows_reactor::image_from_path).unwrap_or_default()\n}\n"
+        "\npub fn resolve_image<'a>(icon: impl Into<IconRef<'a>>) -> windows_reactor::Image {\n    resolve(icon).map(guicons::windows_reactor::image_from_data).unwrap_or_default()\n}\n"
     } else {
         ""
     };
@@ -231,17 +211,6 @@ pub fn data_for(key: IconKey) -> Option<IconData> {{
 
 pub fn resolve<'a>(icon: impl Into<IconRef<'a>>) -> Option<IconData> {{
     key_from_ref(icon.into()).and_then(data_for)
-}}
-
-pub fn path_for(key: IconKey) -> Option<&'static str> {{
-    match key {{
-{path_arms}
-        _ => None,
-    }}
-}}
-
-pub fn resolve_path<'a>(icon: impl Into<IconRef<'a>>) -> Option<&'static str> {{
-    key_from_ref(icon.into()).and_then(path_for)
 }}
 {slint_resolver}{windows_reactor_resolver}{egui_resolver}"#,
         manifest_file_name(manifest_path)

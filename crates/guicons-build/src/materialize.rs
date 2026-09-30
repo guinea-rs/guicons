@@ -1,6 +1,6 @@
 use super::paths::canonicalize_existing;
 use guicons_core::{IconEntry, IconEntrySource, IconManifest, ThemePaint};
-use guicons_net::{ensure_cached, iconify_cache_path, iconify_url, url_cache_path};
+use guicons_net::RemoteIcon;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -21,12 +21,10 @@ pub(crate) enum MaterializedIconBackend {
     Glyph { font_family: String, codepoint: char },
 }
 
-/// The unpainted SVG, kept so the color can change at runtime, and the
-/// dark theme's copy.
+/// The unpainted SVG, kept so the color can change at runtime.
 #[derive(Clone, Debug)]
 pub(crate) struct MaterializedPaint {
     pub(crate) template: PathBuf,
-    pub(crate) dark_path: PathBuf,
     pub(crate) colors: ThemePaint,
 }
 
@@ -36,14 +34,8 @@ pub(crate) enum ImageKind {
     Png,
 }
 
-/// Iconify/URL cache paths are rooted at `manifest.workspace_root()`, not
-/// the build script's own `current_dir()` - those two only coincide when
-/// `IconBuild::auto()`'s discovery finds `icons.gui.toml` sitting directly
-/// alongside the calling crate. `IconBuild::new(path)` lets a manifest live
-/// anywhere else (a monorepo root two crates up, say), and `current_dir()`
-/// is always the compiling crate's own directory regardless - using it here
-/// scattered a separate `.cache/guicons` per crate, invisible to `guicons
-/// fetch`, which resolves the cache dir from the manifest's real location.
+/// Iconify/URL icons come from [`guicons_net::cache_dir`] of the resolved
+/// manifest, the same directory `icon!` and `icons fetch` use.
 pub(crate) fn materialize_icons(manifest: &IconManifest, build_out_dir: &Path) -> Vec<MaterializedIcon> {
     let icons_dir = build_out_dir.join("icons");
     let _ = fs::create_dir_all(&icons_dir);
@@ -60,14 +52,12 @@ pub(crate) fn materialize_icons(manifest: &IconManifest, build_out_dir: &Path) -
                 }
                 IconEntrySource::Iconify(id) => {
                     let output_path = icons_dir.join(format!("{}.svg", output_stem(entry.key())));
-                    let cached = iconify_cache_path(manifest.workspace_root(), id);
-                    ensure_cached(&cached, &iconify_url(id));
+                    let cached = cached(manifest, RemoteIcon::Iconify(id));
                     materialize_image(entry, &cached, output_path, &icons_dir)
                 }
                 IconEntrySource::Url(url) => {
                     let output_path = icons_dir.join(format!("{}.svg", output_stem(entry.key())));
-                    let cached = url_cache_path(manifest.workspace_root(), url);
-                    ensure_cached(&cached, url);
+                    let cached = cached(manifest, RemoteIcon::Url(url));
                     materialize_image(entry, &cached, output_path, &icons_dir)
                 }
                 IconEntrySource::Glyph(glyph) => {
@@ -91,6 +81,10 @@ pub(crate) fn materialize_icons(manifest: &IconManifest, build_out_dir: &Path) -
         .collect()
 }
 
+fn cached(manifest: &IconManifest, icon: RemoteIcon<'_>) -> PathBuf {
+    guicons_net::ensure_cached(manifest, icon).unwrap_or_else(|e| panic!("{e}"))
+}
+
 pub(crate) fn output_stem(key: &str) -> String {
     key.replace(['.', '_'], "-")
 }
@@ -111,14 +105,12 @@ fn materialize_image(entry: &IconEntry, source: &Path, output_path: PathBuf, ico
     }
     let stem = output_stem(entry.key());
     let template = icons_dir.join(format!("{stem}.template.svg"));
-    let dark_path = icons_dir.join(format!("{stem}.dark.svg"));
     write_if_changed(&template, &bytes);
     write_if_changed(&output_path, &guicons_core::paint_svg(&bytes, colors.light));
-    write_if_changed(&dark_path, &guicons_core::paint_svg(&bytes, colors.dark));
     MaterializedIconBackend::Image {
         path: output_path,
         kind,
-        paint: Some(MaterializedPaint { template, dark_path, colors }),
+        paint: Some(MaterializedPaint { template, colors }),
     }
 }
 
@@ -175,7 +167,7 @@ mod tests {
     }
 
     #[test]
-    fn painted_icon_keeps_its_template_and_ships_a_copy_per_theme() {
+    fn painted_icon_keeps_its_template_and_a_light_copy() {
         let (_dir, icons) = materialize(
             "[defaults]\npaint = { light = \"#123456\", dark = \"#abcdef\" }\n\n[gear]\nfile = \"gear.svg\"\n",
             &[("gear.svg", TEMPLATE)],
@@ -184,7 +176,6 @@ mod tests {
             panic!("gear should be painted");
         };
         assert_eq!(fs::read_to_string(path).unwrap(), r##"<svg><path fill="#123456"/></svg>"##);
-        assert_eq!(fs::read_to_string(&paint.dark_path).unwrap(), r##"<svg><path fill="#abcdef"/></svg>"##);
         assert_eq!(fs::read_to_string(&paint.template).unwrap(), TEMPLATE);
     }
 

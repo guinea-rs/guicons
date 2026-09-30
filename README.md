@@ -34,8 +34,8 @@ typed, checked operation instead of a bare file path.
 - **Slint integration out of the box**, with a runnable example in
   `crates/guicons/examples/`.
 - **CLI** (`guicons-cli`): `icons fetch`/`update` populates the
-  offline iconify cache; `icons add <iconify-id|file>` adds an icon to
-  your manifest in one command.
+  offline iconify cache and `icons.lock`; `icons add <iconify-id|file>`
+  adds an icon to your manifest in one command.
 
 ## Usage
 
@@ -126,7 +126,9 @@ paint = "#c42b1c"
 ```
 
 The app sets the theme once, and again when it changes; icons built after
-that use its color. `color = ...` overrides it at a call site:
+that use its color. `color = ...` overrides it at a call site. Each
+recolored copy lives until the process exits, so pick colors from a fixed
+set rather than animating them:
 
 ```rust
 guicons::set_theme(guicons::Theme::Dark);
@@ -136,6 +138,15 @@ guicons::icon!(settings.filled, color = accent);
 
 A painted SVG without `currentColor`, or `color = ...` on an icon without
 `paint`, is a compile error.
+
+### Downloaded icons
+
+`icons fetch` downloads iconify/url icons into `.cache/guicons/` at the
+workspace root and writes their sha256 to `icons.lock` next to the
+manifest. Commit both: builds never touch the network unless
+`GUICONS_ALLOW_NETWORK=1` is set, and a cached or downloaded icon that
+differs from `icons.lock` fails the build. `icons update` re-downloads and
+re-locks everything.
 
 ### Dynamic/runtime lookups
 

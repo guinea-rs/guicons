@@ -6,8 +6,9 @@ on:
   pull_request:
     branches: [master]
 
-# Cancels a stale run when new commits land on the same branch/PR - avoids
-# burning CI minutes on a build for a diff that's already been superseded.
+permissions:
+  contents: read
+
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -20,20 +21,58 @@ jobs:
         os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de
+        with:
+          toolchain: stable
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
 
-      # `--all-targets` (tests/benches/examples using only default
-      # features) but not `--all-features` - the `slint`/`iced` GUI
-      # features pull in real windowing-toolkit deps that need extra
-      # system packages on Linux runners, and aren't part of what this
-      # workflow is meant to gate (guicons-cli and the manifest/codegen
-      # core are the parts every change here actually touches).
       - name: Build
         run: cargo build --workspace --all-targets
 
       - name: Test
         run: cargo test --workspace
+
+  features:
+    strategy:
+      fail-fast: false
+      matrix:
+        feature: [slint, iced, egui, windows-reactor]
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de
+        with:
+          toolchain: stable
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+        with:
+          key: ${{ matrix.feature }}
+
+      - name: Check
+        env:
+          GUICONS_ALLOW_NETWORK: "1"
+        run: cargo check -p guicons --all-targets --features "macros ${{ matrix.feature }}"
+
+  msrv:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de
+        with:
+          toolchain: "1.95.0"
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+
+      - name: Check
+        run: cargo check --workspace

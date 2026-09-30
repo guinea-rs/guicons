@@ -2,6 +2,7 @@
 name = "guicons-cli"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "CLI for editing icons.gui.toml and populating the icon cache"
@@ -11,8 +12,8 @@ name = "icons"
 path = "src/main.rs"
 
 [dependencies]
-guicons-core = { path = "../guicons-core", version = "0.7.0" }
-guicons-net = { path = "../guicons-net", version = "0.7.0" }
+guicons-core = { path = "../guicons-core", version = "0.8.0" }
+guicons-net = { path = "../guicons-net", version = "0.8.0" }
 toml_edit = "0.25"
 clap = { version = "4", features = ["derive"] }
 tempfile = "3.27.0"

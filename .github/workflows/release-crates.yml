@@ -1,53 +1,37 @@
 name: Publish crates.io
 
-# Runs on every push to master that touches a Cargo.toml - each publish
-# step below is idempotent (checks crates.io first and skips if that
-# exact version is already live), so a push that *doesn't* bump the
-# shared workspace version just no-ops through every step instead of
-# erroring. Bumping `[workspace.package] version` in the root Cargo.toml
-# and pushing is what actually triggers a real release. `workflow_dispatch`
-# is kept as a manual escape hatch (e.g. retrying after a transient
-# failure) - same idempotency guard applies either way.
 on:
-  push:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
     branches: [master]
-    paths:
-      - "Cargo.toml"
-      - "crates/*/Cargo.toml"
-  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   publish:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'master' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
     runs-on: ubuntu-latest
+    environment: crates-io
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          persist-credentials: false
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de
+        with:
+          toolchain: stable
 
-      - uses: Swatinem/rust-cache@v2
-
-      # Dependency order matters: each `cargo publish` below only succeeds
-      # once every path-dependency it names a `version` for (see each
-      # crate's Cargo.toml) is actually live on crates.io - a freshly
-      # published crate needs a few seconds to show up in the index, hence
-      # the wait after an actual publish (not after a skip - nothing
-      # changed on the index, no reason to wait).
-      - name: Publish guicons-core
-        run: bash .github/workflows/scripts/publish-if-new.sh guicons-core
-
-      - name: Publish guicons-net
-        run: bash .github/workflows/scripts/publish-if-new.sh guicons-net
-
-      - name: Publish guicons-macros
-        run: bash .github/workflows/scripts/publish-if-new.sh guicons-macros
-
-      - name: Publish guicons-build
-        run: bash .github/workflows/scripts/publish-if-new.sh guicons-build
-
-      - name: Publish guicons
-        run: bash .github/workflows/scripts/publish-if-new.sh guicons
-
-      - name: Publish guicons-cli
-        run: bash .github/workflows/scripts/publish-if-new.sh guicons-cli
-    env:
-      CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+      - name: Publish
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: |
+          for crate in guicons-core guicons-net guicons-macros guicons-build guicons guicons-cli; do
+            bash .github/workflows/scripts/publish-if-new.sh "$crate"
+          done

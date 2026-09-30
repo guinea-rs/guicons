@@ -12,15 +12,15 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Download every iconify/url icon in the manifest into `.cache/guicons/`.
+    /// Download every iconify/url icon into `.cache/guicons/` and lock it in `icons.lock`.
     Fetch {
         #[arg(long, default_value = "icons.gui.toml")]
         manifest: PathBuf,
-        /// Re-download even if already cached.
+        /// Re-download even if already cached, and re-lock.
         #[arg(long)]
         force: bool,
     },
-    /// Like `fetch`, but always re-downloads.
+    /// Like `fetch`, but always re-downloads and re-locks.
     Update {
         #[arg(long, default_value = "icons.gui.toml")]
         manifest: PathBuf,
@@ -149,14 +149,7 @@ fn run_add(
 }
 
 fn run_fetch(manifest: &PathBuf, force: bool) -> ExitCode {
-    let cwd = match std::env::current_dir() {
-        Ok(cwd) => cwd,
-        Err(e) => {
-            eprintln!("failed to read current directory: {e}");
-            return ExitCode::FAILURE;
-        }
-    };
-    match guicons_cli::fetch(manifest, &cwd, force) {
+    match guicons_cli::fetch(manifest, force) {
         Ok(summary) => {
             print_summary(&summary);
             if summary.is_success() {

@@ -1,4 +1,5 @@
 use guicons_core::{IconEntrySource, IconManifest};
+use guicons_net::{Lock, RemoteIcon};
 use miette::{LabeledSpan, MietteDiagnostic, NamedSource, Report, Severity};
 use std::collections::HashMap;
 use std::fs;
@@ -12,11 +13,11 @@ use std::path::{Path, PathBuf};
 ///
 /// - a `file` source pointing at a path that doesn't exist - a real error,
 ///   since nothing will ever be able to load it.
-/// - an `iconify = "provider:name"` source with no cached SVG on disk yet -
-///   only *advice* (informational, not a warning/error), since resolving it
-///   for real needs network access (`icons fetch`) that `check` deliberately
-///   never does itself; not being cached yet doesn't mean the id is wrong,
-///   just unconfirmed.
+/// - an `iconify`/`url` source with no cached copy on disk yet - only
+///   *advice*, since resolving it for real needs network access
+///   (`icons fetch`) that `check` deliberately never does itself.
+/// - a cached copy that doesn't match `icons.lock` - an error; one that
+///   isn't in an existing `icons.lock` yet - advice.
 ///
 /// `windows-ico` paths are not checked.
 ///
@@ -31,6 +32,7 @@ pub fn check(manifest_path: &Path) -> (usize, Vec<Report>) {
         .iter()
         .map(|error| build_report(&error.file, error.span.clone(), error.message.clone(), Severity::Error, &mut source_cache))
         .collect();
+    let lock = load_lock(&manifest);
 
     for entry in manifest.entries() {
         match entry.source() {
@@ -48,8 +50,13 @@ pub fn check(manifest_path: &Path) -> (usize, Vec<Report>) {
                 ));
             }
             IconEntrySource::Iconify(id) => {
-                if let Some(message) = unresolved_iconify_message(&manifest, id) {
-                    reports.push(build_report(entry.file(), Some(entry.span()), message, Severity::Advice, &mut source_cache));
+                if let Some((message, severity)) = remote_problem(&manifest, &lock, RemoteIcon::Iconify(id)) {
+                    reports.push(build_report(entry.file(), Some(entry.span()), message, severity, &mut source_cache));
+                }
+            }
+            IconEntrySource::Url(url) => {
+                if let Some((message, severity)) = remote_problem(&manifest, &lock, RemoteIcon::Url(url)) {
+                    reports.push(build_report(entry.file(), Some(entry.span()), message, severity, &mut source_cache));
                 }
             }
             _ => {}
@@ -59,19 +66,51 @@ pub fn check(manifest_path: &Path) -> (usize, Vec<Report>) {
     (manifest.entries().len(), reports)
 }
 
-/// `None` if `id`'s cached SVG is already on disk (nothing to warn about) -
-/// otherwise a human-readable reason it can't be confirmed to resolve yet.
-fn unresolved_iconify_message(manifest: &IconManifest, id: &str) -> Option<String> {
-    if id.split_once(':').is_none() {
-        return Some(format!("iconify id `{id}` isn't in `provider:name` form - it will never resolve"));
+enum LockState {
+    Missing,
+    Present(Lock),
+    Unreadable(String),
+}
+
+fn load_lock(manifest: &IconManifest) -> LockState {
+    let path = guicons_net::lock_path(manifest);
+    if !path.exists() {
+        return LockState::Missing;
     }
-    let cache_path = guicons_net::iconify_cache_path(manifest.workspace_root(), id);
-    if cache_path.exists() {
-        return None;
+    match Lock::load(&path) {
+        Ok(lock) => LockState::Present(lock),
+        Err(e) => LockState::Unreadable(e.to_string()),
     }
-    Some(format!(
-        "iconify icon `{id}` isn't cached locally yet, so `check` can't confirm it resolves - run `icons fetch` (or set `GUICONS_ALLOW_NETWORK=1`) to fetch and verify it"
-    ))
+}
+
+/// Why a remote icon can't be confirmed from the cache and `icons.lock`,
+/// or `None` if it can.
+fn remote_problem(manifest: &IconManifest, lock: &LockState, icon: RemoteIcon<'_>) -> Option<(String, Severity)> {
+    let label = icon.label();
+    let cache_path = match icon.cache_path(&guicons_net::cache_dir(manifest)) {
+        Ok(path) => path,
+        Err(e) => return Some((format!("{e} - it will never resolve"), Severity::Advice)),
+    };
+    let Ok(bytes) = fs::read(&cache_path) else {
+        return Some((
+            format!(
+                "`{label}` isn't cached locally yet, so `check` can't confirm it resolves - run `icons fetch` (or set `GUICONS_ALLOW_NETWORK=1`) to fetch and verify it"
+            ),
+            Severity::Advice,
+        ));
+    };
+    match lock {
+        LockState::Missing => None,
+        LockState::Unreadable(e) => Some((e.clone(), Severity::Error)),
+        LockState::Present(lock) => match (lock.get(icon), lock.verify(icon, &bytes)) {
+            (_, Err(e)) => Some((e.to_string(), Severity::Error)),
+            (None, Ok(())) => Some((
+                format!("`{label}` isn't in {} yet - run `icons fetch` to lock it", guicons_net::LOCK_FILE),
+                Severity::Advice,
+            )),
+            (Some(_), Ok(())) => None,
+        },
+    }
 }
 
 fn build_report(
@@ -182,5 +221,23 @@ mod tests {
 
         let (_, reports) = check(&path);
         assert!(reports.is_empty(), "{reports:?}");
+    }
+
+    #[test]
+    fn check_reports_an_error_for_a_cached_icon_that_differs_from_the_lock() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("icons.gui.toml");
+        fs::write(&path, "[docker]\niconify = \"mdi:home\"\n").unwrap();
+        let cache_path = dir.path().join(".cache/guicons/mdi/home.svg");
+        fs::create_dir_all(cache_path.parent().unwrap()).unwrap();
+        fs::write(&cache_path, "<svg>tampered</svg>").unwrap();
+        let mut lock = Lock::default();
+        lock.set(RemoteIcon::Iconify("mdi:home"), guicons_net::sha256_hex(b"<svg/>"));
+        lock.save(&dir.path().join(guicons_net::LOCK_FILE)).unwrap();
+
+        let (_, reports) = check(&path);
+        assert_eq!(reports.len(), 1, "{reports:?}");
+        assert_eq!(reports[0].severity(), Some(Severity::Error));
+        assert!(format!("{:?}", reports[0]).contains("doesn't match"));
     }
 }
