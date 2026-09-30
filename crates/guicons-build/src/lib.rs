@@ -11,9 +11,11 @@ pub use guicons_net::ALLOW_NETWORK_ENV;
 fn load_icon_manifest(manifest_path: &std::path::Path) -> IconManifest {
     let (manifest, errors) = guicons_core::load_icon_manifest(manifest_path);
 
+    println!("cargo:rerun-if-changed={}", manifest_path.display());
     for source_path in manifest.source_paths() {
         println!("cargo:rerun-if-changed={}", source_path.display());
     }
+    println!("cargo:rerun-if-changed={}", guicons_net::lock_path(&manifest).display());
     println!("cargo:rerun-if-env-changed={ALLOW_NETWORK_ENV}");
 
     if !errors.is_empty() {

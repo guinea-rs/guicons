@@ -197,7 +197,10 @@ fn apply_paint(
         }
         return Ok(resolved);
     };
-    let ResolvedSource::Image { path, .. } = resolved else {
+    let ResolvedSource::Image { path, kind: "Svg" } = resolved else {
+        if let Some(color) = color {
+            return Err(Error::new_spanned(color, format!("icon `{name}` isn't an SVG, there is nothing to recolor")));
+        }
         return Ok(resolved);
     };
     if let Ok(svg) = std::fs::read(&path) {
@@ -240,10 +243,7 @@ fn expand_family_variant_data(
     };
 
     let resolved = match entry.source() {
-        guicons_core::IconEntrySource::File(path) => ResolvedSource::Image {
-            kind: image_kind(path),
-            path: path.to_string_lossy().into_owned(),
-        },
+        guicons_core::IconEntrySource::File(path) => image_source(path)?,
         guicons_core::IconEntrySource::Iconify(id) => resolve_remote(&manifest, guicons_net::RemoteIcon::Iconify(id))?,
         guicons_core::IconEntrySource::Url(url) => resolve_remote(&manifest, guicons_net::RemoteIcon::Url(url))?,
         guicons_core::IconEntrySource::Glyph(spec) => {
@@ -256,20 +256,24 @@ fn expand_family_variant_data(
     Ok(emit_for_target(resolved, target))
 }
 
-fn image_kind(path: &std::path::Path) -> &'static str {
-    match path.extension().and_then(|ext| ext.to_str()) {
-        Some("png") => "Png",
-        _ => "Svg",
-    }
+/// An image source whose kind comes from the file's content.
+fn image_source(path: &std::path::Path) -> Result<ResolvedSource> {
+    let bytes = std::fs::read(path)
+        .map_err(|e| Error::new(Span::call_site(), format!("failed to read {}: {e}", path.display())))?;
+    let kind = match guicons_core::ImageFormat::sniff(&bytes) {
+        Some(guicons_core::ImageFormat::Svg) => "Svg",
+        Some(guicons_core::ImageFormat::Png) => "Png",
+        None => {
+            return Err(Error::new(Span::call_site(), format!("{} is neither SVG nor PNG", path.display())));
+        }
+    };
+    Ok(ResolvedSource::Image { path: path.to_string_lossy().into_owned(), kind })
 }
 
 fn resolve_remote(manifest: &guicons_core::IconManifest, icon: guicons_net::RemoteIcon<'_>) -> Result<ResolvedSource> {
     let cache_path =
         guicons_net::ensure_cached(manifest, icon).map_err(|e| Error::new(Span::call_site(), e.to_string()))?;
-    Ok(ResolvedSource::Image {
-        path: cache_path.to_string_lossy().into_owned(),
-        kind: "Svg",
-    })
+    image_source(&cache_path)
 }
 
 /// Works without a manifest too: the cache is then the crate's workspace
@@ -289,7 +293,7 @@ fn expand_iconify_literal(id: &str, color: Option<&Expr>, target: Target) -> Res
             let root = guicons_core::find_workspace_root_from(&crate_dir).unwrap_or(crate_dir);
             let cache_path = guicons_net::ensure_cached_in_workspace(&root, icon)
                 .map_err(|e| Error::new(Span::call_site(), e.to_string()))?;
-            (ResolvedSource::Image { path: cache_path.to_string_lossy().into_owned(), kind: "Svg" }, None)
+            (image_source(&cache_path)?, None)
         }
     };
     let resolved = apply_paint(resolved, paint, color, id)?;

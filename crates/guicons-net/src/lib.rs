@@ -3,7 +3,7 @@
 //! cache from the same manifest, so a `icons fetch` and a later build agree
 //! on where an icon lives and what it must hash to.
 
-use guicons_core::IconManifest;
+use guicons_core::{IconManifest, ImageFormat};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use std::env;
@@ -211,7 +211,7 @@ pub fn fetch(icon: RemoteIcon<'_>) -> Result<Vec<u8>, DownloadError> {
     if bytes.len() as u64 > MAX_ICON_BYTES {
         return Err(error(format!("`{url}` is larger than {MAX_ICON_BYTES} bytes")));
     }
-    if !is_icon_image(&bytes) {
+    if ImageFormat::sniff(&bytes).is_none() {
         return Err(error(format!("`{url}` returned something that is neither SVG nor PNG")));
     }
     Ok(bytes)
@@ -260,15 +260,6 @@ fn check_scheme(url: &str) -> Result<(), DownloadError> {
     }
 }
 
-fn is_icon_image(bytes: &[u8]) -> bool {
-    if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
-        return true;
-    }
-    let text = String::from_utf8_lossy(bytes).to_ascii_lowercase();
-    let text = text.trim_start_matches('\u{feff}').trim_start();
-    text.starts_with('<') && text.contains("<svg") && !text.contains("<html")
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -292,14 +283,6 @@ mod tests {
         assert!(check_scheme("http://example.com/a.svg").is_err());
         assert!(check_scheme("http://localhost.example.com/a.svg").is_err());
         assert!(check_scheme("file:///etc/passwd").is_err());
-    }
-
-    #[test]
-    fn html_is_not_an_icon() {
-        assert!(is_icon_image(b"\xef\xbb\xbf  <?xml version=\"1.0\"?>\n<svg/>"));
-        assert!(is_icon_image(b"\x89PNG\r\n\x1a\n...."));
-        assert!(!is_icon_image(b"<!DOCTYPE html><html><body><svg/></body></html>"));
-        assert!(!is_icon_image(b"{\"error\": 404}"));
     }
 
     #[test]

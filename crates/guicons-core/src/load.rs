@@ -11,7 +11,7 @@
 
 use crate::diagnostics::{Diagnostics, ManifestError};
 use crate::graph::{build_manifest_graph, ManifestFile, ManifestGraph};
-use crate::model::{IconEntry, IconManifest};
+use crate::model::{IconEntry, IconManifest, ManifestDefaults};
 use crate::parse::{collect_entries, parse_defaults, parse_providers, resolve_providers};
 use crate::paths::{find_workspace_root, resolve_manifest_redirect, resolve_manifest_redirect_content};
 use petgraph::graph::NodeIndex;
@@ -55,7 +55,7 @@ fn load(manifest_path: &Path, content_override: Option<&str>) -> (IconManifest, 
     let mut errors = Vec::new();
     let file_graph = build_manifest_graph(manifest_path, content_override, &mut errors);
     let source_paths: Vec<_> = file_graph.graph.node_weights().map(|file| file.path.clone()).collect();
-    let manifest = compile(&file_graph, file_graph.root, &source_paths, &mut errors);
+    let manifest = compile(&file_graph, file_graph.root, None, &source_paths, &mut errors);
     check_duplicate_keys(&manifest.entries, &mut errors);
     (manifest, errors)
 }
@@ -117,6 +117,7 @@ fn empty_manifest(manifest_path: &Path, source_paths: &[std::path::PathBuf]) -> 
         entries: Vec::new(),
         providers: std::collections::HashMap::new(),
         default_paint: None,
+        roots: Vec::new(),
     }
 }
 
@@ -129,6 +130,7 @@ fn empty_manifest(manifest_path: &Path, source_paths: &[std::path::PathBuf]) -> 
 fn compile(
     file_graph: &ManifestGraph,
     node: NodeIndex,
+    inherited: Option<&ManifestDefaults>,
     source_paths: &[std::path::PathBuf],
     errors: &mut Vec<ManifestError>,
 ) -> IconManifest {
@@ -151,7 +153,7 @@ fn compile(
     let defaults_value = root_table.remove("defaults");
     let defaults = {
         let mut diags = Diagnostics { file: manifest_path, errors };
-        parse_defaults(defaults_value, &workspace_root, &manifest_dir, &mut diags)
+        parse_defaults(defaults_value, &workspace_root, &manifest_dir, inherited, &mut diags)
     };
 
     let providers_value = root_table.remove("providers");
@@ -176,7 +178,7 @@ fn compile(
     let mut entries = Vec::new();
     let mut providers = HashMap::new();
     for (_, child) in children {
-        let child_manifest = compile(file_graph, child, source_paths, errors);
+        let child_manifest = compile(file_graph, child, Some(&defaults), source_paths, errors);
         entries.extend(child_manifest.entries);
         providers.extend(child_manifest.providers);
     }
@@ -207,5 +209,6 @@ fn compile(
         entries,
         providers,
         default_paint: defaults.paint,
+        roots: defaults.roots,
     }
 }

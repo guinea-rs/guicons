@@ -8,6 +8,11 @@ ManifestDefaults {
         "/workspace/b",
         "/workspace/c",
     ],
+    declared_roots: [
+        "/workspace/a",
+        "/workspace/b",
+        "/workspace/c",
+    ],
     provider: None,
     size: None,
     paint: None,

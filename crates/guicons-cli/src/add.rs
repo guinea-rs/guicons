@@ -32,6 +32,7 @@ pub fn add(
     size: Option<u16>,
     force: bool,
 ) -> Result<Vec<String>, AddError> {
+    let manifest_path = &guicons_core::resolve_manifest_redirect(manifest_path);
     let existing_manifest = if manifest_path.exists() {
         let (manifest, errors) = guicons_core::load_icon_manifest(manifest_path);
         if !errors.is_empty() {
@@ -42,7 +43,7 @@ pub fn add(
         None
     };
 
-    let plan = plan_add(source, name, variants, size, existing_manifest.as_ref()).map_err(AddError::Plan)?;
+    let plan = plan_add(manifest_path, source, name, variants, size, existing_manifest.as_ref()).map_err(AddError::Plan)?;
 
     if !force {
         if let Some(manifest) = &existing_manifest {
@@ -75,7 +76,7 @@ pub fn add(
 
     validate(manifest_path, &new_content)?;
 
-    fs::write(manifest_path, &new_content).map_err(|e| AddError::Io(e.to_string()))?;
+    guicons_net::write_atomic(manifest_path, new_content.as_bytes()).map_err(|e| AddError::Io(e.to_string()))?;
 
     Ok(plan
         .items
@@ -105,13 +106,17 @@ fn validate(manifest_path: &Path, content: &str) -> Result<(), AddError> {
 }
 
 fn plan_add(
+    manifest_path: &Path,
     source: &str,
     name: Option<&str>,
     variants: &[String],
     size: Option<u16>,
     manifest: Option<&IconManifest>,
 ) -> Result<AddPlan, String> {
-    if let Some((provider, base)) = source.split_once(':') {
+    let iconify = source
+        .split_once(':')
+        .filter(|(provider, _)| is_iconify_prefix(provider) && !Path::new(source).exists());
+    if let Some((provider, base)) = iconify {
         if base.is_empty() {
             return Err(format!("`{source}` has no icon name after the `:`"));
         }
@@ -171,8 +176,34 @@ fn plan_add(
         family,
         size: None,
         field_name: "file",
-        items: vec![(None, source.to_string())],
+        items: vec![(None, file_relative_to_roots(manifest_path, source, manifest)?)],
     })
+}
+
+fn is_iconify_prefix(provider: &str) -> bool {
+    !provider.is_empty() && provider.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+}
+
+/// `source` (relative to the current directory) as the manifest spells it:
+/// relative to the first of its roots that contains it.
+fn file_relative_to_roots(manifest_path: &Path, source: &str, manifest: Option<&IconManifest>) -> Result<String, String> {
+    let file = guicons_core::canonicalize_or_self(Path::new(source));
+    if !file.is_file() {
+        return Err(format!("`{source}` doesn't exist"));
+    }
+    let manifest_dir = manifest_path.parent().filter(|dir| !dir.as_os_str().is_empty()).unwrap_or_else(|| Path::new("."));
+    let roots = match manifest {
+        Some(manifest) if !manifest.roots().is_empty() => manifest.roots().to_vec(),
+        _ => vec![manifest_dir.to_path_buf()],
+    };
+    roots
+        .iter()
+        .find_map(|root| file.strip_prefix(guicons_core::canonicalize_or_self(root)).ok())
+        .map(|relative| relative.to_string_lossy().replace('\\', "/"))
+        .ok_or_else(|| {
+            let roots: Vec<String> = roots.iter().map(|root| root.display().to_string()).collect();
+            format!("`{source}` isn't under the manifest's roots ({})", roots.join(", "))
+        })
 }
 
 fn compute_key(family: &str, size: Option<u16>, variant: Option<&str>) -> String {
@@ -196,13 +227,22 @@ fn table_path(family: &str, size: Option<u16>) -> Vec<String> {
     path
 }
 
+/// The table at `parent[key]`, converting an inline table in place (keeping
+/// its entries) and creating it if missing.
+fn child_table<'a>(parent: &'a mut Table, key: &str) -> &'a mut Table {
+    let item = parent.entry(key).or_insert_with(|| Item::Table(Table::new()));
+    if let Some(inline) = item.as_inline_table().cloned() {
+        *item = Item::Table(inline.into_table());
+    } else if !item.is_table() {
+        *item = Item::Table(Table::new());
+    }
+    item.as_table_mut().unwrap()
+}
+
 fn navigate_or_create<'a>(table: &'a mut Table, path: &[String]) -> &'a mut Table {
     let mut current = table;
     for segment in path {
-        if !matches!(current.get(segment), Some(item) if item.is_table()) {
-            current.insert(segment, Item::Table(Table::new()));
-        }
-        current = current.get_mut(segment).unwrap().as_table_mut().unwrap();
+        current = child_table(current, segment);
     }
     current
 }
@@ -211,10 +251,7 @@ fn set_entry(doc: &mut DocumentMut, path: &[String], variant: Option<&str>, fiel
     let table = navigate_or_create(doc.as_table_mut(), path);
     match variant {
         Some(variant) => {
-            if !matches!(table.get("variants"), Some(item) if item.is_table()) {
-                table.insert("variants", Item::Table(Table::new()));
-            }
-            let variants_table = table.get_mut("variants").unwrap().as_table_mut().unwrap();
+            let variants_table = child_table(table, "variants");
             let mut inline = InlineTable::new();
             inline.insert(field_name, Value::from(field_value));
             variants_table.insert(variant, Item::Value(Value::InlineTable(inline)));

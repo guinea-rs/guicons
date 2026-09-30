@@ -10,6 +10,7 @@ pub struct IconManifest {
     pub(crate) entries: Vec<IconEntry>,
     pub(crate) providers: HashMap<String, ProviderSchema>,
     pub(crate) default_paint: Option<Paint>,
+    pub(crate) roots: Vec<PathBuf>,
 }
 
 /// The known variants/sizes for one icon provider, from `[providers.<name>]`.
@@ -96,6 +97,43 @@ impl PaintColor {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ImageFormat {
+    Svg,
+    Png,
+}
+
+impl ImageFormat {
+    /// By content: the PNG signature, or text that contains an `<svg>`
+    /// element and isn't an HTML page.
+    pub fn sniff(bytes: &[u8]) -> Option<Self> {
+        if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
+            return Some(Self::Png);
+        }
+        let text = String::from_utf8_lossy(bytes).to_ascii_lowercase();
+        let text = text.trim_start_matches('\u{feff}').trim_start();
+        (text.starts_with('<') && text.contains("<svg") && !text.contains("<html")).then_some(Self::Svg)
+    }
+
+    /// By extension, ignoring case.
+    pub fn from_extension(path: &Path) -> Option<Self> {
+        let extension = path.extension()?.to_str()?.to_ascii_lowercase();
+        match extension.as_str() {
+            "svg" => Some(Self::Svg),
+            "png" => Some(Self::Png),
+            _ => None,
+        }
+    }
+
+    /// By content when the file can be read, otherwise by extension.
+    pub fn of_file(path: &Path) -> Option<Self> {
+        match std::fs::read(path) {
+            Ok(bytes) => Self::sniff(&bytes),
+            Err(_) => Self::from_extension(path),
+        }
+    }
+}
+
 /// Whether an SVG has anything for `paint` to recolor.
 pub fn svg_uses_current_color(svg: &[u8]) -> bool {
     svg.windows(CURRENT_COLOR.len())
@@ -147,6 +185,8 @@ pub enum IconEntrySource {
 #[derive(Clone, Debug, Default)]
 pub(crate) struct ManifestDefaults {
     pub(crate) roots: Vec<PathBuf>,
+    /// The roots a `[defaults]` declared, here or in an including file.
+    pub(crate) declared_roots: Vec<PathBuf>,
     pub(crate) provider: Option<String>,
     pub(crate) size: Option<u16>,
     pub(crate) paint: Option<Paint>,
@@ -167,6 +207,11 @@ impl IconManifest {
 
     pub fn source_paths(&self) -> &[PathBuf] {
         &self.source_paths
+    }
+
+    /// Where the root manifest's `file` sources are looked up, in order.
+    pub fn roots(&self) -> &[PathBuf] {
+        &self.roots
     }
 
     /// Renders `path` for display: relative to the workspace root or the

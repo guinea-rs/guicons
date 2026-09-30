@@ -118,6 +118,27 @@ fn include_merges_child_manifest_entries() {
 }
 
 #[test]
+fn an_included_file_inherits_the_includers_defaults() {
+    let dir = tempdir().unwrap();
+    write(dir.path(), "Cargo.toml", "[workspace]\n");
+    write(dir.path(), "assets/back.svg", "<svg/>");
+    write(dir.path(), "icons/nav.gui.toml", "[back]\nfile = \"back.svg\"\n\n[plain]\nfile = \"back.svg\"\npaint = \"none\"\n");
+    let root = write(
+        dir.path(),
+        "icons.gui.toml",
+        "[defaults]\nroot = \"assets\"\npaint = \"#123456\"\n\n[link]\nincludes = [\"icons/nav.gui.toml\"]\n",
+    );
+
+    let (manifest, errors) = load_icon_manifest(&root);
+    assert!(errors.is_empty(), "{errors:?}");
+    let back = manifest.entry_for_key("back").unwrap();
+    let IconEntrySource::File(path) = back.source() else { panic!("back should be a file") };
+    assert!(path.exists(), "{}", path.display());
+    assert!(back.paint().is_some());
+    assert!(manifest.entry_for_key("plain").unwrap().paint().is_none());
+}
+
+#[test]
 fn include_merges_child_manifest_providers() {
     let dir = tempdir().unwrap();
     write(

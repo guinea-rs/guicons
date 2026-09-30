@@ -1,5 +1,5 @@
 use super::paths::canonicalize_existing;
-use guicons_core::{IconEntry, IconEntrySource, IconManifest, ThemePaint};
+use guicons_core::{IconEntry, IconEntrySource, IconManifest, ImageFormat, ThemePaint};
 use guicons_net::RemoteIcon;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -45,21 +45,11 @@ pub(crate) fn materialize_icons(manifest: &IconManifest, build_out_dir: &Path) -
         .iter()
         .map(|entry| {
             let backend = match entry.source() {
-                IconEntrySource::File(path) => {
-                    let output_path =
-                        icons_dir.join(format!("{}.{}", output_stem(entry.key()), image_ext(path)));
-                    materialize_image(entry, &canonicalize_existing(path), output_path, &icons_dir)
-                }
+                IconEntrySource::File(path) => materialize_image(entry, &canonicalize_existing(path), &icons_dir),
                 IconEntrySource::Iconify(id) => {
-                    let output_path = icons_dir.join(format!("{}.svg", output_stem(entry.key())));
-                    let cached = cached(manifest, RemoteIcon::Iconify(id));
-                    materialize_image(entry, &cached, output_path, &icons_dir)
+                    materialize_image(entry, &cached(manifest, RemoteIcon::Iconify(id)), &icons_dir)
                 }
-                IconEntrySource::Url(url) => {
-                    let output_path = icons_dir.join(format!("{}.svg", output_stem(entry.key())));
-                    let cached = cached(manifest, RemoteIcon::Url(url));
-                    materialize_image(entry, &cached, output_path, &icons_dir)
-                }
+                IconEntrySource::Url(url) => materialize_image(entry, &cached(manifest, RemoteIcon::Url(url)), &icons_dir),
                 IconEntrySource::Glyph(glyph) => {
                     let (font_family, codepoint) = guicons_core::parse_glyph_spec(glyph, entry.key());
                     MaterializedIconBackend::Glyph {
@@ -89,10 +79,16 @@ pub(crate) fn output_stem(key: &str) -> String {
     key.replace(['.', '_'], "-")
 }
 
-fn materialize_image(entry: &IconEntry, source: &Path, output_path: PathBuf, icons_dir: &Path) -> MaterializedIconBackend {
+fn materialize_image(entry: &IconEntry, source: &Path, icons_dir: &Path) -> MaterializedIconBackend {
     let bytes = read(source);
-    let kind = image_kind(&output_path);
-    let Some(colors) = entry.paint() else {
+    let (kind, extension) = match ImageFormat::sniff(&bytes) {
+        Some(ImageFormat::Svg) => (ImageKind::Svg, "svg"),
+        Some(ImageFormat::Png) => (ImageKind::Png, "png"),
+        None => panic!("icon `{}`: {} is neither SVG nor PNG", entry.key(), source.display()),
+    };
+    let output_path = icons_dir.join(format!("{}.{extension}", output_stem(entry.key())));
+    let colors = entry.paint().filter(|_| kind == ImageKind::Svg);
+    let Some(colors) = colors else {
         write_if_changed(&output_path, &bytes);
         return MaterializedIconBackend::Image { path: output_path, kind, paint: None };
     };
@@ -115,6 +111,7 @@ fn materialize_image(entry: &IconEntry, source: &Path, output_path: PathBuf, ico
 }
 
 fn read(path: &Path) -> Vec<u8> {
+    println!("cargo:rerun-if-changed={}", path.display());
     fs::read(path).unwrap_or_else(|e| panic!("Failed to read {}: {e}", path.display()))
 }
 
@@ -126,20 +123,6 @@ fn write_if_changed(dest: &Path, bytes: &[u8]) {
         }
         fs::write(dest, bytes)
             .unwrap_or_else(|e| panic!("Failed to write {}: {e}", dest.display()));
-    }
-}
-
-fn image_ext(path: &Path) -> &'static str {
-    match path.extension().and_then(|ext| ext.to_str()).unwrap_or("svg") {
-        "png" => "png",
-        _ => "svg",
-    }
-}
-
-fn image_kind(path: &Path) -> ImageKind {
-    match image_ext(path) {
-        "png" => ImageKind::Png,
-        _ => ImageKind::Svg,
     }
 }
 
@@ -186,6 +169,29 @@ mod tests {
             panic!("gear should not be painted");
         };
         assert_eq!(fs::read_to_string(path).unwrap(), TEMPLATE);
+    }
+
+    #[test]
+    fn format_comes_from_content_not_extension() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("Logo.PNG"), b"\x89PNG\r\n\x1a\nrest").unwrap();
+        fs::write(dir.path().join("gear.svg"), TEMPLATE).unwrap();
+        let manifest_path = dir.path().join("icons.gui.toml");
+        fs::write(
+            &manifest_path,
+            "[defaults]\npaint = \"#123456\"\n\n[logo]\nfile = \"Logo.PNG\"\n\n[gear]\nfile = \"gear.svg\"\n",
+        )
+        .unwrap();
+        let (manifest, errors) = guicons_core::load_icon_manifest(&manifest_path);
+        assert!(errors.is_empty(), "{errors:?}");
+        let icons = materialize_icons(&manifest, &dir.path().join("out"));
+
+        let MaterializedIconBackend::Image { path, kind, paint } = backend(&icons, "logo") else {
+            panic!("logo should be an image");
+        };
+        assert_eq!(*kind, ImageKind::Png);
+        assert!(paint.is_none());
+        assert_eq!(path.extension().unwrap(), "png");
     }
 
     #[test]

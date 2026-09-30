@@ -5,7 +5,9 @@
 //! `toml_span::parse` and validates/extracts entries from it.
 
 use crate::diagnostics::Diagnostics;
-use crate::model::{IconEntry, IconEntrySource, IconManifest, ManifestDefaults, Paint, PaintColor, ProviderSchema, ThemePaint};
+use crate::model::{
+    IconEntry, IconEntrySource, IconManifest, ImageFormat, ManifestDefaults, Paint, PaintColor, ProviderSchema, ThemePaint,
+};
 use crate::paths::resolve_workspace_path;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -153,6 +155,7 @@ pub(crate) fn collect_entries(
                 ),
             }
         }
+        collect_groups(path, table, workspace_root, defaults, providers, inherited_paint, diags, acc);
         return;
     }
 
@@ -186,7 +189,20 @@ pub(crate) fn collect_entries(
     } else {
         take_paint(&mut table, diags).or(inherited_paint)
     };
+    collect_groups(path, table, workspace_root, defaults, providers, inherited_paint, diags, acc);
+}
 
+#[allow(clippy::too_many_arguments)]
+fn collect_groups(
+    path: Vec<String>,
+    table: Table<'_>,
+    workspace_root: &Path,
+    defaults: &ManifestDefaults,
+    providers: &HashMap<String, ProviderSchema>,
+    inherited_paint: Option<Paint>,
+    diags: &mut Diagnostics,
+    acc: &mut Vec<IconEntry>,
+) {
     for (key, mut value) in table {
         let key_name = key.name.to_string();
         if path.is_empty() && RESERVED_TOP_LEVEL.contains(&key_name.as_str()) {
@@ -269,7 +285,7 @@ fn parse_entry(
 
     let resolved_size = explicit_size.or(defaults.size);
 
-    let default_iconify = if has_iconify {
+    let default_iconify = if has_file || has_iconify || has_url || has_glyph {
         None
     } else {
         default_iconify_id(&family, variant.as_deref(), resolved_size, defaults)
@@ -368,8 +384,22 @@ fn parse_entry(
         }
     }
 
+    let file_format = match &source {
+        IconEntrySource::File(path) => match ImageFormat::of_file(path) {
+            Some(format) => Some(format),
+            None if path.exists() || path.extension().is_some_and(|ext| !ext.eq_ignore_ascii_case("svg")) => {
+                diags.error(
+                    Some(table_span.into()),
+                    format!("icon manifest entry `{key}` points at `{}`, which is neither SVG nor PNG", path.display()),
+                );
+                return None;
+            }
+            None => Some(ImageFormat::Svg),
+        },
+        _ => None,
+    };
     let paintable = match &source {
-        IconEntrySource::File(path) => !is_png(path),
+        IconEntrySource::File(_) => file_format != Some(ImageFormat::Png),
         IconEntrySource::Iconify(_) | IconEntrySource::Url(_) => true,
         IconEntrySource::Glyph(_) => false,
     };
@@ -415,27 +445,44 @@ fn parse_entry(
     })
 }
 
+/// A `[link]`ed file inherits the including file's defaults (`inherited`);
+/// each key it declares itself wins. Without a root of its own it searches
+/// the inherited roots first, then its own directory and the workspace root.
 pub(crate) fn parse_defaults(
     defaults_value: Option<Value<'_>>,
     workspace_root: &Path,
     manifest_dir: &Path,
+    inherited: Option<&ManifestDefaults>,
     diags: &mut Diagnostics,
 ) -> ManifestDefaults {
-    let fallback_roots = || vec![manifest_dir.to_path_buf(), workspace_root.to_path_buf()];
+    let own = parse_own_defaults(defaults_value, workspace_root, diags);
+    let inherited = inherited.cloned().unwrap_or_default();
+    let fallback = [manifest_dir.to_path_buf(), workspace_root.to_path_buf()];
+    let (roots, declared_roots) = if !own.roots.is_empty() {
+        (own.roots.clone(), own.roots)
+    } else {
+        let declared = inherited.declared_roots;
+        (declared.iter().cloned().chain(fallback).collect(), declared)
+    };
+    ManifestDefaults {
+        roots,
+        declared_roots,
+        provider: own.provider.or(inherited.provider),
+        size: own.size.or(inherited.size),
+        paint: own.paint.or(inherited.paint),
+    }
+}
 
+/// Only what `[defaults]` itself declares; `roots` is empty when it
+/// declares none.
+fn parse_own_defaults(defaults_value: Option<Value<'_>>, workspace_root: &Path, diags: &mut Diagnostics) -> ManifestDefaults {
     let Some(mut defaults_value) = defaults_value else {
-        return ManifestDefaults {
-            roots: fallback_roots(),
-            ..ManifestDefaults::default()
-        };
+        return ManifestDefaults::default();
     };
     let span = defaults_value.span;
     let Some(table) = take_table(&mut defaults_value) else {
         diags.error(Some(span.into()), "`[defaults]` must be a table");
-        return ManifestDefaults {
-            roots: fallback_roots(),
-            ..ManifestDefaults::default()
-        };
+        return ManifestDefaults::default();
     };
 
     let mut th = TableHelper::from((table, span));
@@ -456,15 +503,13 @@ pub(crate) fn parse_defaults(
     if let Some(values) = roots_field {
         roots.extend(values.iter().map(|value| resolve_workspace_path(workspace_root, value)));
     }
-    if roots.is_empty() {
-        roots = fallback_roots();
-    }
 
     ManifestDefaults {
         roots,
         provider,
         size,
         paint,
+        ..ManifestDefaults::default()
     }
 }
 
@@ -774,10 +819,6 @@ pub fn parse_glyph_spec(spec: &str, context: &str) -> (String, char) {
     try_parse_glyph_spec(spec).unwrap_or_else(|message| panic!("Glyph manifest entry `{context}` {message}"))
 }
 
-fn is_png(path: &Path) -> bool {
-    path.extension().is_some_and(|extension| extension == "png")
-}
-
 pub(crate) fn resolve_file_from_roots(roots: &[PathBuf], value: &str) -> PathBuf {
     let path = Path::new(value);
     if path.is_absolute() {
@@ -863,9 +904,62 @@ mod tests {
                 file: Path::new("test.gui.toml"),
                 errors: &mut errors,
             };
-            parse_defaults(defaults_value, &workspace_root(), &workspace_root(), &mut diags)
+            parse_defaults(defaults_value, &workspace_root(), &workspace_root(), None, &mut diags)
         };
         (defaults, errors.into_iter().map(|e| e.message).collect())
+    }
+
+    #[test]
+    fn defaults_provider_leaves_explicit_non_iconify_sources_alone() {
+        let (defaults, errors) = defaults_for("[defaults]\nprovider = \"fluent\"\nsize = 24\n");
+        assert!(errors.is_empty(), "{errors:?}");
+        let defaults = ManifestDefaults { roots: vec![workspace_root()], ..defaults };
+        let (entries, errors) = entries_for(
+            r#"
+            [logo]
+            file = "logo.svg"
+
+            [remote]
+            url = "https://example.com/remote.svg"
+
+            [spinner]
+            glyph = "Segoe Fluent Icons:U+E001"
+            "#,
+            defaults,
+        );
+        assert!(errors.is_empty(), "{errors:?}");
+        assert_eq!(entries.len(), 3);
+    }
+
+    #[test]
+    fn size_groups_next_to_variants_are_kept() {
+        let (entries, errors) = entries_for(
+            r#"
+            [settings]
+            variants.filled = { file = "settings-filled.svg" }
+
+            [settings.24]
+            variants.filled = { file = "settings-24-filled.svg" }
+            "#,
+            with_root(),
+        );
+        assert!(errors.is_empty(), "{errors:?}");
+        let keys: Vec<&str> = entries.iter().map(IconEntry::key).collect();
+        assert_eq!(keys, ["settings-filled", "settings-24-filled"]);
+    }
+
+    #[test]
+    fn stray_keys_next_to_variants_are_errors() {
+        let (_, errors) = entries_for(
+            r#"
+            [settings]
+            dynamic = true
+            variants.filled = { file = "settings-filled.svg" }
+            "#,
+            with_root(),
+        );
+        assert_eq!(errors.len(), 1, "{errors:?}");
+        assert!(errors[0].contains("dynamic"), "{errors:?}");
     }
 
     #[test]
@@ -1284,6 +1378,23 @@ mod tests {
     }
 
     #[test]
+    fn a_file_that_is_neither_svg_nor_png_is_an_error() {
+        let (entries, errors) = entries_for(
+            r#"
+            [photo]
+            file = "photo.jpg"
+
+            [shout]
+            file = "SHOUT.SVG"
+            "#,
+            with_root(),
+        );
+        assert_eq!(entries.len(), 1);
+        assert_eq!(errors.len(), 1, "{errors:?}");
+        assert!(errors[0].contains("neither SVG nor PNG"), "{errors:?}");
+    }
+
+    #[test]
     fn explicit_paint_on_a_glyph_is_an_error() {
         let (paints, errors) = paints_for(
             r##"
@@ -1370,6 +1481,7 @@ mod tests {
             entries: Vec::new(),
             providers,
             default_paint: None,
+            roots: Vec::new(),
         }
     }
 
