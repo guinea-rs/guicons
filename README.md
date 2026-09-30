@@ -36,13 +36,6 @@ typed, checked operation instead of a bare file path.
 - **CLI** (`guicons-cli`): `icons fetch`/`update` populates the
   offline iconify cache; `icons add <iconify-id|file>` adds an icon to
   your manifest in one command.
-- **LSP** (`guicons-lsp`): completion, hover, goto-definition, find
-  usages, rename, and diagnostics, with navigation between `icons.gui.toml`
-  and your Rust code in both directions.
-- **RustRover/IntelliJ plugin**: a sidebar tool window showing your
-  manifest's structure, with icon previews and a built-in iconify.design
-  browser to search, preview, and insert a reference at the caret in one
-  click.
 
 ## Usage
 

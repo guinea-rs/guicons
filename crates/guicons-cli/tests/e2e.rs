@@ -63,13 +63,11 @@ fn check_exits_nonzero_for_a_missing_manifest_file() {
     assert!(!output.status.success());
 }
 
-/// `icons check` only re-reports `guicons_core::load_icon_manifest`'s own
-/// errors (`crates/guicons-cli/src/check.rs` adds no validation of its
-/// own) - and that parser only validates manifest *shape* (TOML syntax,
-/// unknown fields, exactly-one-source). It doesn't check the filesystem
-/// (missing-file diagnostics are `guicons-lsp`-only, an editor-side
-/// concern, left alone here) or semantic correctness of what fields point
-/// to or mean. `glyph`-spec validation and duplicate-`key()` detection
+/// `icons check` re-reports `guicons_core::load_icon_manifest`'s errors
+/// (manifest *shape*: TOML syntax, unknown fields, exactly-one-source) and
+/// adds missing-`file` and uncached-iconify checks of its own; it doesn't
+/// check the semantic correctness of what fields point to or mean.
+/// `glyph`-spec validation and duplicate-`key()` detection
 /// used to be gaps of that second kind - now fixed in `guicons-core`
 /// (`parse.rs`/`load.rs`) and pinned below as regression tests. Two gaps
 /// remain, deliberately not closed (see each test's doc comment for why),
@@ -80,9 +78,8 @@ mod check_semantic_validation {
     /// A `file` source pointing at a path that doesn't exist now fails
     /// `check` (fixed in `guicons-cli::check`) - it only used to fail
     /// later, at actual build/materialize time (`guicons-build`/
-    /// `guicons-macros`'s `include_bytes!`). `windows-ico` is deliberately
-    /// still not checked here - narrower, Windows-only, left to
-    /// `guicons-lsp`'s existing editor-side check.
+    /// `guicons-macros`'s `include_bytes!`). `windows-ico` is still not
+    /// checked.
     #[test]
     fn check_catches_a_file_source_pointing_at_a_nonexistent_asset() {
         let dir = tempdir().unwrap();

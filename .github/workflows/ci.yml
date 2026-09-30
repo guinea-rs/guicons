@@ -30,43 +30,10 @@ jobs:
       # features) but not `--all-features` - the `slint`/`iced` GUI
       # features pull in real windowing-toolkit deps that need extra
       # system packages on Linux runners, and aren't part of what this
-      # workflow is meant to gate (guicons-lsp, guicons-cli, and the
-      # manifest/codegen core are the parts every change here actually
-      # touches).
+      # workflow is meant to gate (guicons-cli and the manifest/codegen
+      # core are the parts every change here actually touches).
       - name: Build
         run: cargo build --workspace --all-targets
 
       - name: Test
         run: cargo test --workspace
-
-  # The IDE plugin isn't part of the Cargo workspace (own Gradle build),
-  # and needs a real RustRover distribution to compile against - unlike
-  # local dev (which points `local()` at a machine's own install, see
-  # ide-plugin/build.gradle.kts), CI downloads one via `GUICONS_CI=true`.
-  ide-plugin:
-    runs-on: windows-latest
-    env:
-      GUICONS_CI: "true"
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: dtolnay/rust-toolchain@stable
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: ". -> target"
-
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "21"
-
-      - uses: gradle/actions/setup-gradle@v4
-
-      - name: Build plugin
-        working-directory: ide-plugin
-        run: ./gradlew buildPlugin --console=plain
-
-      - name: Test plugin
-        working-directory: ide-plugin
-        run: ./gradlew test --console=plain

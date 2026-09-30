@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/guicons", "crates/guicons-build", "crates/guicons-cli", "crates/guicons-core", "crates/guicons-ffi", "crates/guicons-lsp", "crates/guicons-macros", "crates/guicons-net"]
+members = ["crates/guicons", "crates/guicons-build", "crates/guicons-cli", "crates/guicons-core", "crates/guicons-macros", "crates/guicons-net"]
 resolver = "3"
 
 [workspace.package]

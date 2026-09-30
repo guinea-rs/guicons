@@ -18,8 +18,7 @@ use std::path::{Path, PathBuf};
 ///   never does itself; not being cached yet doesn't mean the id is wrong,
 ///   just unconfirmed.
 ///
-/// `windows-ico` is deliberately not checked here (narrower, Windows-only
-/// concern; left to `guicons-lsp`'s existing editor-side check).
+/// `windows-ico` paths are not checked.
 ///
 /// Returns the number of entries that parsed successfully alongside the
 /// reports (empty if the manifest is fully valid, though it may still

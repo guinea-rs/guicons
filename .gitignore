@@ -7,8 +7,3 @@ crates/guicons-build/tests/fixtures/*/target/
 # committed under a fixture's .cache/ on purpose (as pre-seeded offline
 # test data) - .gitignore never untracks what's already tracked.
 .cache/
-ide-plugin/build/
-ide-plugin/.gradle/
-ide-plugin/.idea/
-ide-plugin/.intellijPlatform/
-ide-plugin/.kotlin/

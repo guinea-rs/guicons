@@ -358,9 +358,6 @@ fn emit_for_target(resolved: ResolvedSource, target: Target) -> proc_macro2::Tok
     }
 }
 
-/// Thin wrapper over `guicons_core::selector::parse_resource_selector` -
-/// shared with `guicons-lsp`'s hover, which parses the exact same grammar
-/// from plain scanned text rather than a `syn::LitStr`.
 fn parse_selector_literal(literal: &LitStr) -> Result<IconSelector> {
     guicons_core::selector::parse_resource_selector(&literal.value()).map_err(|message| Error::new_spanned(literal, message))
 }
@@ -472,19 +469,20 @@ mod tests {
     use super::*;
     use syn::parse::Parser;
 
-    /// `parse_selector_path` (this crate, token-driven off a real
-    /// `syn::ParseStream`) and `guicons_core::selector::parse_selector_path_text`
-    /// (`guicons-lsp`'s plain-text equivalent) must agree on every dotted-
-    /// path selector - cheap insurance against the two entry points
-    /// drifting apart now that they're two separate tokenizers feeding
-    /// the same shared `classify_segments`.
+    fn path(input: &str) -> IconSelector {
+        parse_selector_path.parse2(input.parse().unwrap()).unwrap()
+    }
+
+    fn family_variant(family: &str, size: Option<u16>, variant: Option<&str>) -> IconSelector {
+        IconSelector::FamilyVariant { family: family.to_string(), size, variant: variant.map(str::to_string) }
+    }
+
     #[test]
-    fn syn_and_text_path_parsers_agree_on_known_selectors() {
-        for input in ["settings", "settings.filled", "settings.24.filled", "settings.20", "nav_bar.filled"] {
-            let tokens: proc_macro2::TokenStream = input.parse().unwrap();
-            let via_syn = parse_selector_path.parse2(tokens).unwrap();
-            let via_text = guicons_core::selector::parse_selector_path_text(input).unwrap();
-            assert_eq!(via_syn, via_text, "mismatch for `{input}`");
-        }
+    fn path_selectors_parse() {
+        assert_eq!(path("settings"), family_variant("settings", None, None));
+        assert_eq!(path("settings.filled"), family_variant("settings", None, Some("filled")));
+        assert_eq!(path("settings.24.filled"), family_variant("settings", Some(24), Some("filled")));
+        assert_eq!(path("settings.20"), family_variant("settings", Some(20), None));
+        assert_eq!(path("nav_bar.filled"), family_variant("nav-bar", None, Some("filled")));
     }
 }

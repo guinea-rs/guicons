@@ -265,9 +265,7 @@ fn link_rejects_unknown_fields() {
 }
 
 /// A `[link]`-included file that doesn't exist on disk used to surface as
-/// a spanless error attributed to the *missing child's own path* - which
-/// meant it silently vanished from LSP diagnostics (filtered out, since
-/// they're published against the *parent*, currently-open document) and
+/// a spanless error attributed to the *missing child's own path*, which
 /// showed up in `icons check` with no location at all. It should instead
 /// point at the `includes = [...]` entry that named it, in the parent file.
 #[test]

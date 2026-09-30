@@ -20,14 +20,8 @@ pub(crate) fn resolve_entry_path(root: &Path, value: &str) -> PathBuf {
 }
 
 /// `dunce::canonicalize`, not `std::fs::canonicalize` - on Windows the
-/// latter prefixes the result with the `\\?\` verbatim path marker, which
-/// then leaks into any `file://` URI built from it (`Url::from_file_path`
-/// has no idea it's not a real path segment) and stops matching the
-/// plain, non-canonicalized URI a real LSP client sends for the same
-/// file. Hit exactly this: `textDocument/rename`'s workspace edit came
-/// back keyed by a `\\?\`-derived URI the client never actually opened,
-/// so the edit silently applied to nothing. `dunce` canonicalizes the
-/// same way otherwise, just without ever emitting that prefix.
+/// latter prefixes the result with the `\\?\` verbatim path marker, so it
+/// stops comparing equal to the same path spelled normally.
 pub fn canonicalize_or_self(path: &Path) -> PathBuf {
     dunce::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
 }
@@ -48,26 +42,6 @@ pub fn find_workspace_root_from(start: &Path) -> Option<PathBuf> {
     }
 }
 
-/// The `icons.gui.toml` governing `rust_file` - its own crate's manifest
-/// (via `find_workspace_root_from`, which stops at the nearest ancestor
-/// `Cargo.toml` rather than climbing to a cargo *workspace* root), not
-/// any manifest that happens to exist elsewhere. In a multi-crate
-/// workspace, a `.rs` file must only ever resolve against its own
-/// crate's manifest - never a different crate's, even if one is sitting
-/// right next to it (a real bug once, in `guicons-lsp`'s hover).
-/// `None` if there's no `Cargo.toml` above `rust_file`, or no
-/// `icons.gui.toml` beside it. Follows [`resolve_manifest_redirect`] if
-/// that `icons.gui.toml` turns out to be a pointer rather than a real
-/// manifest.
-pub fn manifest_path_for_rust_file(rust_file: &Path) -> Option<PathBuf> {
-    let crate_root = find_workspace_root_from(rust_file.parent()?)?;
-    let manifest = crate_root.join("icons.gui.toml");
-    if !manifest.is_file() {
-        return None;
-    }
-    Some(resolve_manifest_redirect(&manifest))
-}
-
 /// A crate's own `icons.gui.toml` can be a *pointer* instead of a real
 /// manifest - just a `root_manifest = "<path>"` line, nothing else - for
 /// the monorepo case where several crates actually share one manifest
@@ -75,10 +49,9 @@ pub fn manifest_path_for_rust_file(rust_file: &Path) -> Option<PathBuf> {
 /// resolves `path` to whatever it points at (relative to `path`'s own
 /// directory), unchanged if `path` isn't a pointer (missing, unreadable,
 /// invalid TOML, or just a real manifest with no `root_manifest` key).
-/// Both `manifest_path_for_rust_file` and `crate::load`'s entry points
-/// funnel through this, so build.rs's `IconBuild::auto()`, the LSP, and
-/// the IDE plugin all follow the same pointer transparently - no
-/// separate lookup mechanism, no `IconBuild::new(path)` override needed
+/// `crate::load`'s entry points funnel through this, so build.rs's
+/// `IconBuild::auto()` and the CLI follow the same pointer transparently -
+/// no separate lookup mechanism, no `IconBuild::new(path)` override needed
 /// once the pointer file exists.
 pub fn resolve_manifest_redirect(path: &Path) -> PathBuf {
     match fs::read_to_string(path) {
@@ -88,10 +61,8 @@ pub fn resolve_manifest_redirect(path: &Path) -> PathBuf {
 }
 
 /// Like [`resolve_manifest_redirect`], but checking already-in-memory
-/// `content` instead of reading `path` from disk - for editor tooling
-/// that's showing an unsaved buffer (the pointer file itself might be
-/// what's currently open).
-pub fn resolve_manifest_redirect_content(path: &Path, content: &str) -> PathBuf {
+/// `content` instead of reading `path` from disk.
+pub(crate) fn resolve_manifest_redirect_content(path: &Path, content: &str) -> PathBuf {
     let Ok(root) = toml_span::parse(content) else { return path.to_path_buf() };
     let Some(target) = root.pointer("/root_manifest").and_then(|v| v.as_str()) else {
         return path.to_path_buf();

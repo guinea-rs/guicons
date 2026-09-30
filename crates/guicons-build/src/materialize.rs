@@ -43,8 +43,7 @@ pub(crate) enum ImageKind {
 /// anywhere else (a monorepo root two crates up, say), and `current_dir()`
 /// is always the compiling crate's own directory regardless - using it here
 /// scattered a separate `.cache/guicons` per crate, invisible to `guicons
-/// fetch`/the LSP diagnostics that already resolve the cache dir from the
-/// manifest's real location the correct way.
+/// fetch`, which resolves the cache dir from the manifest's real location.
 pub(crate) fn materialize_icons(manifest: &IconManifest, build_out_dir: &Path) -> Vec<MaterializedIcon> {
     let icons_dir = build_out_dir.join("icons");
     let _ = fs::create_dir_all(&icons_dir);

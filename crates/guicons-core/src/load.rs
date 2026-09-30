@@ -31,9 +31,8 @@ pub fn load_icon_manifest(manifest_path: &Path) -> (IconManifest, Vec<ManifestEr
 }
 
 /// Like [`load_icon_manifest`], but parses `content` for the root document
-/// instead of reading `manifest_path` from disk - for editor tooling that
-/// wants diagnostics against unsaved buffer content. Any `[link]`d files
-/// are still read from disk as usual (they aren't the document being edited).
+/// instead of reading `manifest_path` from disk. Any `[link]`d files are
+/// still read from disk.
 pub fn load_icon_manifest_from_str(manifest_path: &Path, content: &str) -> (IconManifest, Vec<ManifestError>) {
     load(manifest_path, Some(content))
 }
@@ -42,12 +41,10 @@ fn load(manifest_path: &Path, content_override: Option<&str>) -> (IconManifest, 
     // `manifest_path` itself might be a pointer (a stub `icons.gui.toml`
     // next to a crate that shares a manifest living elsewhere - see
     // `resolve_manifest_redirect`'s doc comment) - resolved before
-    // anything else touches it, so every caller (`build.rs`, the LSP, the
-    // IDE plugin) transparently ends up loading the real manifest instead.
-    // `content_override` only still applies once resolution lands back on
-    // the same path (i.e. it wasn't a pointer) - it's the *edited
-    // buffer's* content, which is meaningless once resolution has moved
-    // on to a different, on-disk file.
+    // anything else touches it, so every caller transparently ends up
+    // loading the real manifest instead. `content_override` only still
+    // applies once resolution lands back on the same path (i.e. it wasn't
+    // a pointer).
     let resolved_path = match content_override {
         Some(content) => resolve_manifest_redirect_content(manifest_path, content),
         None => resolve_manifest_redirect(manifest_path),
