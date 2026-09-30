@@ -77,12 +77,12 @@ fn fetch_one(
     let cache_path = icon.cache_path(cache_dir)?;
     if !force && let Ok(bytes) = fs::read(&cache_path) {
         lock.verify(icon, &bytes)?;
-        return Ok((guicons_net::sha256_hex(&bytes), false));
+        return Ok((guicons_net::content_hash(&bytes), false));
     }
     let bytes = guicons_net::fetch(icon)?;
     if !force {
         lock.verify(icon, &bytes)?;
     }
     guicons_net::write_atomic(&cache_path, &bytes)?;
-    Ok((guicons_net::sha256_hex(&bytes), true))
+    Ok((guicons_net::content_hash(&bytes), true))
 }

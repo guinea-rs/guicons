@@ -148,10 +148,10 @@ impl Lock {
     /// An error if `icon` is locked to a different hash than `bytes`.
     pub fn verify(&self, icon: RemoteIcon<'_>, bytes: &[u8]) -> Result<(), DownloadError> {
         match self.get(icon) {
-            Some(expected) if expected != sha256_hex(bytes) => Err(error(format!(
+            Some(expected) if expected != content_hash(bytes) => Err(error(format!(
                 "`{}` doesn't match {LOCK_FILE}: sha256 {}, locked {expected}",
                 icon.label(),
-                sha256_hex(bytes)
+                content_hash(bytes)
             ))),
             _ => Ok(()),
         }
@@ -230,6 +230,23 @@ pub fn write_atomic(dest: &Path, bytes: &[u8]) -> Result<(), DownloadError> {
     Ok(())
 }
 
+/// What `icons.lock` records: the sha256 of the icon, with an SVG's CRLF
+/// line endings read as LF so a checkout with `core.autocrlf` still matches.
+pub fn content_hash(bytes: &[u8]) -> String {
+    if ImageFormat::sniff(bytes) != Some(ImageFormat::Svg) || !bytes.contains(&b'\r') {
+        return sha256_hex(bytes);
+    }
+    let mut normalized = Vec::with_capacity(bytes.len());
+    let mut rest = bytes;
+    while let Some((&byte, tail)) = rest.split_first() {
+        if !(byte == b'\r' && tail.first() == Some(&b'\n')) {
+            normalized.push(byte);
+        }
+        rest = tail;
+    }
+    sha256_hex(&normalized)
+}
+
 pub fn sha256_hex(bytes: &[u8]) -> String {
     hex::encode(Sha256::digest(bytes))
 }
@@ -298,6 +315,16 @@ mod tests {
         assert!(lock.verify(home, b"<svg/>").is_ok());
         assert!(lock.verify(home, b"<svg>changed</svg>").is_err());
         assert!(lock.verify(RemoteIcon::Url("https://example.com/a.svg"), b"anything").is_ok());
+    }
+
+    #[test]
+    fn crlf_in_an_svg_hashes_like_lf() {
+        let lf = b"<svg>\n<path/>\n</svg>\n";
+        let crlf = b"<svg>\r\n<path/>\r\n</svg>\r\n";
+        assert_eq!(content_hash(crlf), content_hash(lf));
+        assert_eq!(content_hash(lf), sha256_hex(lf));
+        let png = b"\x89PNG\r\n\x1a\n\r\n";
+        assert_eq!(content_hash(png), sha256_hex(png));
     }
 
     #[test]

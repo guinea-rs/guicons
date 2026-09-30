@@ -17,8 +17,8 @@ windows-reactor = []
 egui = []
 
 [dependencies]
-guicons-core = { path = "../guicons-core", version = "0.9.0" }
-guicons-net = { path = "../guicons-net", version = "0.9.0" }
+guicons-core = { path = "../guicons-core", version = "0.9.1" }
+guicons-net = { path = "../guicons-net", version = "0.9.1" }
 proc-macro2 = "1"
 quote = "1"
 syn = { version = "2", features = ["full", "parsing", "proc-macro"] }
