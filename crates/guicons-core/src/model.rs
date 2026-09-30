@@ -243,9 +243,18 @@ impl IconManifest {
         size: Option<u16>,
         variant: Option<&str>,
     ) -> Option<&IconEntry> {
-        self.entries.iter().find(|entry| {
-            entry.family == family && entry.size == size && entry.variant.as_deref() == variant
-        })
+        let same_icon = |entry: &&IconEntry| entry.family == family && entry.variant.as_deref() == variant;
+        if let Some(entry) = self.entries.iter().filter(same_icon).find(|entry| entry.size == size) {
+            return Some(entry);
+        }
+        if size.is_some() {
+            return None;
+        }
+        let mut sized = self.entries.iter().filter(same_icon);
+        match (sized.next(), sized.next()) {
+            (Some(only), None) => Some(only),
+            _ => None,
+        }
     }
 
     pub fn provider(&self, name: &str) -> Option<&ProviderSchema> {

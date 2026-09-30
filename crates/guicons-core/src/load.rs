@@ -55,7 +55,9 @@ fn load(manifest_path: &Path, content_override: Option<&str>) -> (IconManifest, 
     let mut errors = Vec::new();
     let file_graph = build_manifest_graph(manifest_path, content_override, &mut errors);
     let source_paths: Vec<_> = file_graph.graph.node_weights().map(|file| file.path.clone()).collect();
-    let manifest = compile(&file_graph, file_graph.root, None, &source_paths, &mut errors);
+    let mut manifest = compile(&file_graph, file_graph.root, None, &source_paths, &mut errors);
+    let mut seen = std::collections::HashSet::new();
+    manifest.entries.retain(|entry| seen.insert((entry.key.clone(), entry.file.clone())));
     check_duplicate_keys(&manifest.entries, &mut errors);
     (manifest, errors)
 }
@@ -71,7 +73,22 @@ fn load(manifest_path: &Path, content_override: Option<&str>) -> (IconManifest, 
 /// file.
 fn check_duplicate_keys(entries: &[IconEntry], errors: &mut Vec<ManifestError>) {
     let mut first_seen: HashMap<&str, &IconEntry> = HashMap::new();
+    let mut const_names: HashMap<String, &IconEntry> = HashMap::new();
     for entry in entries {
+        if let Some(other) = const_names.insert(crate::rust_const_name(entry.key()), entry) {
+            if other.key() != entry.key() {
+                errors.push(ManifestError {
+                    file: entry.file().to_path_buf(),
+                    span: Some(entry.span()),
+                    message: format!(
+                        "icon keys `{}` and `{}` both become the Rust name `{}`",
+                        other.key(),
+                        entry.key(),
+                        crate::rust_const_name(entry.key())
+                    ),
+                });
+            }
+        }
         match first_seen.get(entry.key()) {
             Some(first) => errors.push(ManifestError {
                 file: entry.file().to_path_buf(),

@@ -131,6 +131,9 @@ pub(crate) fn collect_entries(
         for (variant_key, mut variant_value) in variants_table {
             let variant = variant_key.name.to_string();
             let entry_span = variant_value.span;
+            if !check_name(&variant, variant_key.span, diags) {
+                continue;
+            }
             match take_table(&mut variant_value) {
                 Some(variant_table) => {
                     if let Some(entry) = parse_entry(
@@ -216,10 +219,22 @@ fn collect_groups(
             );
             continue;
         };
+        if !check_name(&key_name, key.span, diags) {
+            continue;
+        }
         let mut next_path = path.clone();
         next_path.push(key_name);
         collect_entries(next_path, sub_table, workspace_root, defaults, providers, inherited_paint, diags, acc);
     }
+}
+
+/// Icon names end up in generated Rust and Slint identifiers and strings.
+fn check_name(name: &str, span: Span, diags: &mut Diagnostics) -> bool {
+    let valid = !name.is_empty() && name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_');
+    if !valid {
+        diags.error(Some(span.into()), format!("icon name `{name}` may only contain ASCII letters, digits, `-` and `_`"));
+    }
+    valid
 }
 
 /// Folds over *keys* as well as values - a table this covers only by its

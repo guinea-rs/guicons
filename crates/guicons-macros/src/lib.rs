@@ -253,7 +253,27 @@ fn expand_family_variant_data(
     };
     let resolved = apply_paint(resolved, entry.paint(), color, entry.key())?;
 
-    Ok(emit_for_target(resolved, target))
+    Ok(tracked(&manifest_path, &manifest, emit_for_target(resolved, target)))
+}
+
+/// `expr` in a block that `include_bytes!`s the manifest files, so editing
+/// them recompiles the crate that expanded the macro.
+fn tracked(
+    pointer: &std::path::Path,
+    manifest: &guicons_core::IconManifest,
+    expr: proc_macro2::TokenStream,
+) -> proc_macro2::TokenStream {
+    let lock = guicons_net::lock_path(manifest);
+    let files = std::iter::once(pointer.to_path_buf())
+        .chain(manifest.source_paths().iter().cloned())
+        .chain(lock.exists().then_some(lock))
+        .map(|path| path.to_string_lossy().into_owned());
+    quote! {
+        {
+            #(const _: &[u8] = include_bytes!(#files);)*
+            #expr
+        }
+    }
 }
 
 /// An image source whose kind comes from the file's content.
@@ -280,23 +300,21 @@ fn resolve_remote(manifest: &guicons_core::IconManifest, icon: guicons_net::Remo
 /// root, and nothing is painted.
 fn expand_iconify_literal(id: &str, color: Option<&Expr>, target: Target) -> Result<proc_macro2::TokenStream> {
     let icon = guicons_net::RemoteIcon::Iconify(id);
-    let (resolved, paint) = match manifest_dir() {
-        Ok(dir) => {
-            let manifest = load_manifest(&dir.join("icons.gui.toml"))?;
-            (resolve_remote(&manifest, icon)?, manifest.paint_for_iconify(id))
-        }
-        Err(_) => {
-            let crate_dir = PathBuf::from(
-                std::env::var_os("CARGO_MANIFEST_DIR")
-                    .ok_or_else(|| Error::new(Span::call_site(), "CARGO_MANIFEST_DIR is not set"))?,
-            );
-            let root = guicons_core::find_workspace_root_from(&crate_dir).unwrap_or(crate_dir);
-            let cache_path = guicons_net::ensure_cached_in_workspace(&root, icon)
-                .map_err(|e| Error::new(Span::call_site(), e.to_string()))?;
-            (image_source(&cache_path)?, None)
-        }
-    };
-    let resolved = apply_paint(resolved, paint, color, id)?;
+    if let Ok(dir) = manifest_dir() {
+        let pointer = dir.join("icons.gui.toml");
+        let manifest = load_manifest(&pointer)?;
+        let resolved = resolve_remote(&manifest, icon)?;
+        let resolved = apply_paint(resolved, manifest.paint_for_iconify(id), color, id)?;
+        return Ok(tracked(&pointer, &manifest, emit_for_target(resolved, target)));
+    }
+    let crate_dir = PathBuf::from(
+        std::env::var_os("CARGO_MANIFEST_DIR")
+            .ok_or_else(|| Error::new(Span::call_site(), "CARGO_MANIFEST_DIR is not set"))?,
+    );
+    let root = guicons_core::find_workspace_root_from(&crate_dir).unwrap_or(crate_dir);
+    let cache_path =
+        guicons_net::ensure_cached_in_workspace(&root, icon).map_err(|e| Error::new(Span::call_site(), e.to_string()))?;
+    let resolved = apply_paint(image_source(&cache_path)?, None, color, id)?;
     Ok(emit_for_target(resolved, target))
 }
 

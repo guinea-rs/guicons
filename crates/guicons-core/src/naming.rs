@@ -1,5 +1,12 @@
+/// A manifest key as a Rust `SCREAMING_SNAKE_CASE` constant name, prefixed
+/// with `ICON_` when it would otherwise start with a digit.
 pub fn rust_const_name(key: &str) -> String {
-    key.replace(['.', '-'], "_").to_ascii_uppercase()
+    let name = key.replace(['.', '-'], "_").to_ascii_uppercase();
+    if name.is_empty() || name.starts_with(|ch: char| ch.is_ascii_digit()) {
+        format!("ICON_{name}")
+    } else {
+        name
+    }
 }
 
 /// A manifest key (`settings-filled`) as a Rust/Slint `UpperCamelCase`
@@ -67,7 +74,13 @@ fn is_rust_keyword(name: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::rust_fn_name;
+    use super::{rust_const_name, rust_fn_name};
+
+    #[test]
+    fn const_name_never_starts_with_a_digit() {
+        assert_eq!(rust_const_name("3d-cube"), "ICON_3D_CUBE");
+        assert_eq!(rust_const_name("settings-filled"), "SETTINGS_FILLED");
+    }
 
     #[test]
     fn converts_dashes_to_snake_case() {
