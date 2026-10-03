@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::path::PathBuf;
 use std::sync::{LazyLock, Mutex, PoisonError};
-use windows_reactor::{EncodedImage, FontIcon, Image, ImageIcon, LayoutControl, View};
+use windows_reactor::{EncodedImage, FontIcon, Image, ImageIcon, View};
 
 pub const DEFAULT_ICON_SIZE: f64 = 16.0;
 
@@ -134,7 +134,14 @@ impl IconBuilder {
 
     /// An `ImageIcon` for an icon slot (`.icon(...)`), sized only if a size was set.
     pub fn build(self) -> View {
-        self.source.image_icon().width(self.width).height(self.height).into()
+        let mut icon = self.source.image_icon();
+        if let Some(width) = self.width {
+            icon = icon.width(width);
+        }
+        if let Some(height) = self.height {
+            icon = icon.height(height);
+        }
+        icon.into()
     }
 
     /// A standalone `Image`, [`DEFAULT_ICON_SIZE`] unless a size was set.

@@ -8,8 +8,8 @@ repository.workspace = true
 description = "build.rs codegen: parses icons.gui.toml, materializes assets, generates Rust/Slint registries"
 
 [dependencies]
-guicons-core = { path = "../guicons-core", version = "0.9.1" }
-guicons-net = { path = "../guicons-net", version = "0.9.1" }
+guicons-core = { path = "../guicons-core", version = "0.10.0" }
+guicons-net = { path = "../guicons-net", version = "0.10.0" }
 pathdiff = "0.2.3"
 
 [dev-dependencies]
