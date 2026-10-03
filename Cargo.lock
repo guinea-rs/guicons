@@ -2382,7 +2382,7 @@ checksum = "b40ca9252762c466af32d0b1002e91e4e1bc5398f77455e55474deb466355ff5"
 
 [[package]]
 name = "guicons"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "egui",
  "guicons-macros",
@@ -2394,7 +2394,7 @@ dependencies = [
 
 [[package]]
 name = "guicons-build"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "criterion",
  "guicons-core",
@@ -2406,7 +2406,7 @@ dependencies = [
 
 [[package]]
 name = "guicons-cli"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "clap",
  "guicons-core",
@@ -2419,7 +2419,7 @@ dependencies = [
 
 [[package]]
 name = "guicons-core"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "dunce",
  "insta",
@@ -2433,7 +2433,7 @@ dependencies = [
 
 [[package]]
 name = "guicons-macros"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "guicons-core",
  "guicons-net",
@@ -2444,7 +2444,7 @@ dependencies = [
 
 [[package]]
 name = "guicons-net"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "guicons-core",
  "hex",

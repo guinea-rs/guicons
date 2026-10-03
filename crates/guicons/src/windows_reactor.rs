@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::path::PathBuf;
 use std::sync::{LazyLock, Mutex, PoisonError};
-use windows_reactor::{EncodedImage, FontIcon, Image, ImageIcon, View};
+use windows_reactor::{EncodedImage, FontIcon, Icon, Image, ImageIcon, View};
 
 pub const DEFAULT_ICON_SIZE: f64 = 16.0;
 
@@ -18,6 +18,7 @@ impl From<windows_reactor::Color> for Color {
 enum Source {
     Path(String),
     Encoded(&'static [u8]),
+    Glyph(char),
     None,
 }
 
@@ -40,7 +41,7 @@ impl Source {
             Self::Path(path) if path.contains("://") => image.source(path).unwrap_or_default(),
             Self::Path(path) => image.source_file(path).unwrap_or_default(),
             Self::Encoded(bytes) => image.source_data(EncodedImage::from_static(bytes)),
-            Self::None => Image::default(),
+            Self::Glyph(_) | Self::None => Image::default(),
         }
     }
 
@@ -50,7 +51,7 @@ impl Source {
             Self::Path(path) if path.contains("://") => icon.source(path).unwrap_or_default(),
             Self::Path(path) => icon.source_file(path).unwrap_or_default(),
             Self::Encoded(bytes) => icon.source_data(EncodedImage::from_static(bytes)),
-            Self::None => ImageIcon::default(),
+            Self::Glyph(_) | Self::None => ImageIcon::default(),
         }
     }
 }
@@ -133,34 +134,93 @@ impl IconBuilder {
     }
 
     /// An `ImageIcon` for an icon slot (`.icon(...)`), sized only if a size was set.
-    pub fn build(self) -> View {
-        let mut icon = self.source.image_icon();
-        if let Some(width) = self.width {
-            icon = icon.width(width);
+    pub fn build(self) -> Icon {
+        let (width, height) = (self.width, self.height);
+        match self.source {
+            Source::Glyph(codepoint) => {
+                let mut icon = FontIcon::new().glyph(codepoint.to_string());
+                if let Some(width) = width {
+                    icon = icon.width(width);
+                }
+                if let Some(height) = height {
+                    icon = icon.height(height);
+                }
+                icon.into()
+            }
+            source => {
+                let mut icon = source.image_icon();
+                if let Some(width) = width {
+                    icon = icon.width(width);
+                }
+                if let Some(height) = height {
+                    icon = icon.height(height);
+                }
+                icon.into()
+            }
         }
-        if let Some(height) = self.height {
-            icon = icon.height(height);
-        }
-        icon.into()
     }
 
-    /// A standalone `Image`, [`DEFAULT_ICON_SIZE`] unless a size was set.
+    /// A standalone element, [`DEFAULT_ICON_SIZE`] unless a size was set.
     pub fn build_element(self) -> View {
-        self.source
-            .image()
-            .width(self.width.unwrap_or(DEFAULT_ICON_SIZE))
-            .height(self.height.unwrap_or(DEFAULT_ICON_SIZE))
-            .into()
+        let width = self.width.unwrap_or(DEFAULT_ICON_SIZE);
+        let height = self.height.unwrap_or(DEFAULT_ICON_SIZE);
+        match self.source {
+            Source::Glyph(codepoint) => FontIcon::new().glyph(codepoint.to_string()).width(width).height(height).into(),
+            source => source.image().width(width).height(height).into(),
+        }
     }
 }
 
 impl From<IconBuilder> for View {
+    fn from(builder: IconBuilder) -> Self {
+        builder.build_element()
+    }
+}
+
+impl From<IconBuilder> for Icon {
     fn from(builder: IconBuilder) -> Self {
         builder.build()
     }
 }
 
 /// A `FontIcon` for `codepoint`, rendered in the platform symbol font.
-pub fn glyph_icon(codepoint: char) -> View {
-    FontIcon::new().glyph(codepoint.to_string()).into()
+pub fn glyph_icon(codepoint: char) -> IconBuilder {
+    IconBuilder { source: Source::Glyph(codepoint), width: None, height: None }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const PNG: &[u8] = b"\x89PNG\r\n\x1a\n";
+
+    #[test]
+    fn build_is_an_icon_for_a_slot() {
+        let expected = ImageIcon::new().source_data(EncodedImage::from_static(PNG)).width(24.0).height(24.0);
+        assert_eq!(data_icon_builder(IconData::Png(PNG)).size(24.0).build(), Icon::from(expected));
+    }
+
+    #[test]
+    fn unsized_icon_leaves_size_unset() {
+        let expected = ImageIcon::new().source_data(EncodedImage::from_static(PNG));
+        assert_eq!(data_icon_builder(IconData::Png(PNG)).build(), Icon::from(expected));
+    }
+
+    #[test]
+    fn glyph_builds_a_font_icon() {
+        let expected = FontIcon::new().glyph("\u{E700}").width(20.0).height(20.0);
+        assert_eq!(glyph_icon('\u{E700}').size(20.0).build(), Icon::from(expected));
+    }
+
+    #[test]
+    fn glyph_element_is_a_sized_font_icon() {
+        let expected: View = FontIcon::new().glyph("\u{E700}").width(DEFAULT_ICON_SIZE).height(DEFAULT_ICON_SIZE).into();
+        assert_eq!(glyph_icon('\u{E700}').build_element(), expected);
+    }
+
+    #[test]
+    fn into_view_is_the_standalone_element() {
+        let view: View = data_icon_builder(IconData::Png(PNG)).into();
+        assert_eq!(view, data_icon_builder(IconData::Png(PNG)).build_element());
+    }
 }
