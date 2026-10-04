@@ -194,16 +194,19 @@ fn ensure_cached_at(cache_dir: &Path, lock_path: &Path, icon: RemoteIcon<'_>) ->
 pub fn fetch(icon: RemoteIcon<'_>) -> Result<Vec<u8>, DownloadError> {
     let url = icon.url()?;
     check_scheme(&url)?;
-    let agent = ureq::AgentBuilder::new()
-        .timeout_connect(Duration::from_secs(10))
-        .timeout(Duration::from_secs(60))
-        .build();
+    let agent = ureq::Agent::config_builder()
+        .timeout_connect(Some(Duration::from_secs(10)))
+        .timeout_global(Some(Duration::from_secs(60)))
+        .max_redirects(5)
+        .build()
+        .new_agent();
     let response = agent
         .get(&url)
         .call()
         .map_err(|e| error(format!("Failed to download `{url}`: {e}")))?;
     let mut bytes = Vec::new();
     response
+        .into_body()
         .into_reader()
         .take(MAX_ICON_BYTES + 1)
         .read_to_end(&mut bytes)
