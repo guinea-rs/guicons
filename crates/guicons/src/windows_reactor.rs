@@ -54,6 +54,17 @@ impl Source {
             Self::Glyph(_) | Self::None => ImageIcon::default(),
         }
     }
+
+    fn icon(self) -> Icon {
+        let icon = match self {
+            Self::Path(path) if path.contains("://") => Icon::image_uri(path).ok(),
+            Self::Path(path) => Icon::image_file(path).ok(),
+            Self::Encoded(bytes) => Some(Icon::image_data(EncodedImage::from_static(bytes))),
+            Self::Glyph(codepoint) => Some(Icon::font(codepoint.to_string())),
+            Self::None => None,
+        };
+        icon.unwrap_or_else(|| Icon::font(""))
+    }
 }
 
 fn svg_file(svg: &'static [u8]) -> Option<String> {
@@ -133,31 +144,9 @@ impl IconBuilder {
         self
     }
 
-    /// An `ImageIcon` for an icon slot (`.icon(...)`), sized only if a size was set.
+    /// An `Icon` for an icon slot (`.icon(...)`); the slot sizes it.
     pub fn build(self) -> Icon {
-        let (width, height) = (self.width, self.height);
-        match self.source {
-            Source::Glyph(codepoint) => {
-                let mut icon = FontIcon::new().glyph(codepoint.to_string());
-                if let Some(width) = width {
-                    icon = icon.width(width);
-                }
-                if let Some(height) = height {
-                    icon = icon.height(height);
-                }
-                icon.into()
-            }
-            source => {
-                let mut icon = source.image_icon();
-                if let Some(width) = width {
-                    icon = icon.width(width);
-                }
-                if let Some(height) = height {
-                    icon = icon.height(height);
-                }
-                icon.into()
-            }
-        }
+        self.source.icon()
     }
 
     /// A standalone element, [`DEFAULT_ICON_SIZE`] unless a size was set.
@@ -195,21 +184,26 @@ mod tests {
     const PNG: &[u8] = b"\x89PNG\r\n\x1a\n";
 
     #[test]
-    fn build_is_an_icon_for_a_slot() {
-        let expected = ImageIcon::new().source_data(EncodedImage::from_static(PNG)).width(24.0).height(24.0);
-        assert_eq!(data_icon_builder(IconData::Png(PNG)).size(24.0).build(), Icon::from(expected));
+    fn embedded_data_builds_an_image_icon() {
+        let expected = Icon::image_data(EncodedImage::from_static(PNG));
+        assert_eq!(data_icon_builder(IconData::Png(PNG)).size(24.0).build(), expected);
     }
 
     #[test]
-    fn unsized_icon_leaves_size_unset() {
-        let expected = ImageIcon::new().source_data(EncodedImage::from_static(PNG));
-        assert_eq!(data_icon_builder(IconData::Png(PNG)).build(), Icon::from(expected));
+    fn file_path_builds_an_image_file_icon() {
+        let expected = Icon::image_file("C:/icons/gear.svg").unwrap();
+        assert_eq!(icon_builder("C:/icons/gear.svg").build(), expected);
+    }
+
+    #[test]
+    fn uri_builds_an_image_uri_icon() {
+        let expected = Icon::image_uri("ms-appx:///Assets/gear.png").unwrap();
+        assert_eq!(icon_builder("ms-appx:///Assets/gear.png").build(), expected);
     }
 
     #[test]
     fn glyph_builds_a_font_icon() {
-        let expected = FontIcon::new().glyph("\u{E700}").width(20.0).height(20.0);
-        assert_eq!(glyph_icon('\u{E700}').size(20.0).build(), Icon::from(expected));
+        assert_eq!(glyph_icon('\u{E700}').size(20.0).build(), Icon::font("\u{E700}"));
     }
 
     #[test]
