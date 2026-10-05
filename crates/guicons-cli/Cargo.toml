@@ -12,8 +12,8 @@ name = "icons"
 path = "src/main.rs"
 
 [dependencies]
-guicons-core = { path = "../guicons-core", version = "0.12.0" }
-guicons-net = { path = "../guicons-net", version = "0.12.0" }
+guicons-core = { path = "../guicons-core", version = "0.13.0" }
+guicons-net = { path = "../guicons-net", version = "0.13.0" }
 toml_edit = "0.25"
 clap = { version = "4", features = ["derive"] }
 tempfile = "3.27.0"
