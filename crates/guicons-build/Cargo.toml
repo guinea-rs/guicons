@@ -15,7 +15,7 @@ pathdiff = "0.2.3"
 [dev-dependencies]
 insta = "1.48.0"
 tempfile = "3.23.0"
-criterion = "0.5"
+criterion = "0.8"
 
 [[bench]]
 name = "codegen"

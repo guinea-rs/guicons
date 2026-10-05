@@ -21,4 +21,4 @@ guicons-core = { path = "../guicons-core", version = "0.13.0" }
 guicons-net = { path = "../guicons-net", version = "0.13.0" }
 proc-macro2 = "1"
 quote = "1"
-syn = { version = "2", features = ["full", "parsing", "proc-macro"] }
+syn = { version = "3", features = ["full", "parsing", "proc-macro"] }
