@@ -9,10 +9,10 @@ description = "Core manifest model and parser for guicons"
 
 [dependencies]
 dunce = "1.0.5"
-petgraph = "0.6"
-syn = { version = "2", default-features = false, features = ["parsing", "printing"] }
+petgraph = "0.8"
+syn = { version = "3", default-features = false, features = ["parsing", "printing"] }
 toml-span = "0.7"
-winnow = "0.7.13"
+winnow = "1.0.4"
 
 [dev-dependencies]
 insta = { version = "1.48.0", features = ["filters"] }
