@@ -8,8 +8,11 @@ repository.workspace = true
 description = "Icon cache resolution and network fetch for guicons"
 
 [dependencies]
-guicons-core = { path = "../guicons-core", version = "0.14.0" }
+guicons-core = { path = "../guicons-core", version = "0.14.1" }
 hex = "0.4.3"
 sha2 = "0.10.9"
 tempfile = "3.27.0"
-ureq = "2.12.1"
+ureq = "3.4.2"
+rustls = { version = "0.23.46", default-features = false }
+rustls-webpki = { version = "0.103.16", default-features = false }
+webpki-roots = { version = "1.0.10", default-features = false }

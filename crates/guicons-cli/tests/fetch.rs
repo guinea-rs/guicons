@@ -192,3 +192,69 @@ fn manifest_parse_errors_are_returned_not_panicked_on() {
     let errors = guicons_cli::fetch(&manifest, false).unwrap_err();
     assert!(!errors.is_empty());
 }
+
+#[test]
+fn oversized_response_is_not_cached() {
+    let dir = tempdir().unwrap();
+    write(dir.path(), "Cargo.toml", "[workspace]\n");
+    let server = tiny_http::Server::http("127.0.0.1:0").unwrap();
+    let url = format!("http://{}/large.svg", server.server_addr());
+    let handle = std::thread::spawn(move || {
+        let request = server.recv_timeout(std::time::Duration::from_secs(10)).unwrap().unwrap();
+        let body = format!("<svg>{}</svg>", " ".repeat(1024 * 1024));
+        let _ = request.respond(tiny_http::Response::from_string(body));
+    });
+    let manifest = write(dir.path(), "icons.gui.toml", &format!("[large]\nurl = \"{url}\"\n"));
+
+    let summary = guicons_cli::fetch(&manifest, false).unwrap();
+    handle.join().unwrap();
+
+    assert_eq!(summary.failed.len(), 1, "{summary:?}");
+    assert!(summary.failed[0].1.contains("larger than"), "{summary:?}");
+    assert!(!url_cache_path(dir.path(), &url).exists());
+}
+
+#[test]
+fn an_http_error_with_an_svg_body_is_not_cached() {
+    let dir = tempdir().unwrap();
+    write(dir.path(), "Cargo.toml", "[workspace]\n");
+    let server = tiny_http::Server::http("127.0.0.1:0").unwrap();
+    let url = format!("http://{}/missing.svg", server.server_addr());
+    let handle = std::thread::spawn(move || {
+        let request = server.recv_timeout(std::time::Duration::from_secs(10)).unwrap().unwrap();
+        let response = tiny_http::Response::from_string("<svg></svg>").with_status_code(404);
+        let _ = request.respond(response);
+    });
+    let manifest = write(dir.path(), "icons.gui.toml", &format!("[missing]\nurl = \"{url}\"\n"));
+
+    let summary = guicons_cli::fetch(&manifest, false).unwrap();
+    handle.join().unwrap();
+
+    assert_eq!(summary.failed.len(), 1, "{summary:?}");
+    assert!(summary.failed[0].1.contains("404"), "{summary:?}");
+    assert!(!url_cache_path(dir.path(), &url).exists());
+}
+
+#[test]
+fn redirects_are_limited_to_five() {
+    let dir = tempdir().unwrap();
+    write(dir.path(), "Cargo.toml", "[workspace]\n");
+    let server = tiny_http::Server::http("127.0.0.1:0").unwrap();
+    let url = format!("http://{}/redirect.svg", server.server_addr());
+    let handle = std::thread::spawn(move || {
+        for _ in 0..6 {
+            let request = server.recv_timeout(std::time::Duration::from_secs(10)).unwrap().unwrap();
+            let location = tiny_http::Header::from_bytes("Location", "/redirect.svg").unwrap();
+            let response = tiny_http::Response::empty(302).with_header(location);
+            let _ = request.respond(response);
+        }
+    });
+    let manifest = write(dir.path(), "icons.gui.toml", &format!("[redirect]\nurl = \"{url}\"\n"));
+
+    let summary = guicons_cli::fetch(&manifest, false).unwrap();
+    handle.join().unwrap();
+
+    assert_eq!(summary.failed.len(), 1, "{summary:?}");
+    assert!(summary.failed[0].1.contains("too many redirects"), "{summary:?}");
+    assert!(!url_cache_path(dir.path(), &url).exists());
+}
