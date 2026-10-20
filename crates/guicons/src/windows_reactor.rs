@@ -1,13 +1,7 @@
 use crate::{Color, IconData};
-use std::collections::HashMap;
-use std::hash::{DefaultHasher, Hash, Hasher};
-use std::path::PathBuf;
-use std::sync::{LazyLock, Mutex, PoisonError};
 use windows_reactor::{EncodedImage, FontIcon, Icon, Image, ImageIcon, View};
 
 pub const DEFAULT_ICON_SIZE: f64 = 16.0;
-
-static SVG_FILES: LazyLock<Mutex<HashMap<usize, String>>> = LazyLock::new(Default::default);
 
 impl From<windows_reactor::Color> for Color {
     fn from(color: windows_reactor::Color) -> Self {
@@ -18,18 +12,17 @@ impl From<windows_reactor::Color> for Color {
 enum Source {
     Path(String),
     Encoded(&'static [u8]),
+    Svg(&'static [u8]),
     Glyph(char),
     None,
 }
 
 impl Source {
-    /// WinUI decodes in-memory bytes only as a bitmap, so an SVG is written
-    /// once per distinct content under the temp directory and loaded from there.
     fn from_data(data: IconData) -> Self {
         match data {
             IconData::Png(bytes) => Self::Encoded(bytes),
             IconData::Svg(_) | IconData::PaintedSvg { .. } => {
-                data.svg_bytes().and_then(svg_file).map(Self::Path).unwrap_or(Self::None)
+                data.svg_bytes().map(Self::Svg).unwrap_or(Self::None)
             }
             IconData::Glyph { .. } => Self::None,
         }
@@ -41,6 +34,7 @@ impl Source {
             Self::Path(path) if path.contains("://") => image.source(path).unwrap_or_default(),
             Self::Path(path) => image.source_file(path).unwrap_or_default(),
             Self::Encoded(bytes) => image.source_data(EncodedImage::from_static(bytes)),
+            Self::Svg(bytes) => image.source_svg(EncodedImage::from_static(bytes)),
             Self::Glyph(_) | Self::None => Image::default(),
         }
     }
@@ -51,6 +45,7 @@ impl Source {
             Self::Path(path) if path.contains("://") => icon.source(path).unwrap_or_default(),
             Self::Path(path) => icon.source_file(path).unwrap_or_default(),
             Self::Encoded(bytes) => icon.source_data(EncodedImage::from_static(bytes)),
+            Self::Svg(bytes) => icon.source_svg(EncodedImage::from_static(bytes)),
             Self::Glyph(_) | Self::None => ImageIcon::default(),
         }
     }
@@ -60,34 +55,12 @@ impl Source {
             Self::Path(path) if path.contains("://") => Icon::image_uri(path).ok(),
             Self::Path(path) => Icon::image_file(path).ok(),
             Self::Encoded(bytes) => Some(Icon::image_data(EncodedImage::from_static(bytes))),
+            Self::Svg(bytes) => Some(Icon::image_svg(EncodedImage::from_static(bytes))),
             Self::Glyph(codepoint) => Some(Icon::font(codepoint.to_string())),
             Self::None => None,
         };
         icon.unwrap_or_else(|| Icon::font(""))
     }
-}
-
-fn svg_file(svg: &'static [u8]) -> Option<String> {
-    let mut files = SVG_FILES.lock().unwrap_or_else(PoisonError::into_inner);
-    let path = files
-        .entry(svg.as_ptr() as usize)
-        .or_insert_with(|| write_svg_file(svg).map(|path| path.to_string_lossy().into_owned()).unwrap_or_default());
-    (!path.is_empty()).then(|| path.clone())
-}
-
-fn write_svg_file(svg: &[u8]) -> std::io::Result<PathBuf> {
-    let mut hasher = DefaultHasher::new();
-    svg.hash(&mut hasher);
-    let dir = std::env::temp_dir().join("guicons");
-    let path = dir.join(format!("{:016x}.svg", hasher.finish()));
-    if std::fs::read(&path).is_ok_and(|existing| existing == svg) {
-        return Ok(path);
-    }
-    std::fs::create_dir_all(&dir)?;
-    let partial = dir.join(format!("{:016x}.{}.tmp", hasher.finish(), std::process::id()));
-    std::fs::write(&partial, svg)?;
-    std::fs::rename(&partial, &path)?;
-    Ok(path)
 }
 
 /// `Image` for icon data embedded in the binary; an unset `Image` for a glyph.
@@ -182,6 +155,45 @@ mod tests {
     use super::*;
 
     const PNG: &[u8] = b"\x89PNG\r\n\x1a\n";
+    const SVG: &[u8] = b"<svg xmlns=\"http://www.w3.org/2000/svg\"><path fill=\"currentColor\"/></svg>";
+
+    fn svg_icons() -> [IconData; 2] {
+        [
+            IconData::Svg(SVG),
+            IconData::PaintedSvg {
+                template: SVG,
+                colors: crate::ThemeColors { light: Color::rgb(0, 0, 0), dark: Color::rgb(255, 255, 255) },
+                color: Some(Color::rgb(0x12, 0xab, 0xff)),
+            },
+        ]
+    }
+
+    #[test]
+    fn svg_data_builds_an_in_memory_svg_icon() {
+        for data in svg_icons() {
+            let bytes = data.svg_bytes().unwrap();
+            assert_eq!(data_icon_builder(data).build(), Icon::image_svg(EncodedImage::from_static(bytes)));
+            assert_ne!(data_icon_builder(data).build(), Icon::image_data(EncodedImage::from_static(bytes)));
+        }
+    }
+
+    #[test]
+    fn svg_data_builds_an_in_memory_svg_image() {
+        for data in svg_icons() {
+            let expected = Image::new().source_svg(EncodedImage::from_static(data.svg_bytes().unwrap()));
+            assert_eq!(image_from_data(data), expected);
+            let expected: View = expected.width(24.0).height(32.0).into();
+            assert_eq!(data_icon_builder(data).width(24.0).height(32.0).build_element(), expected);
+        }
+    }
+
+    #[test]
+    fn svg_data_builds_an_in_memory_svg_image_icon() {
+        for data in svg_icons() {
+            let expected = ImageIcon::new().source_svg(EncodedImage::from_static(data.svg_bytes().unwrap()));
+            assert_eq!(image_icon_from_data(data), expected);
+        }
+    }
 
     #[test]
     fn embedded_data_builds_an_image_icon() {

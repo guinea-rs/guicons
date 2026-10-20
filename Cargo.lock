@@ -2382,7 +2382,7 @@ checksum = "b40ca9252762c466af32d0b1002e91e4e1bc5398f77455e55474deb466355ff5"
 
 [[package]]
 name = "guicons"
-version = "0.13.0"
+version = "0.14.0"
 dependencies = [
  "egui",
  "guicons-macros",
@@ -2394,7 +2394,7 @@ dependencies = [
 
 [[package]]
 name = "guicons-build"
-version = "0.13.0"
+version = "0.14.0"
 dependencies = [
  "criterion",
  "guicons-core",
@@ -2406,7 +2406,7 @@ dependencies = [
 
 [[package]]
 name = "guicons-cli"
-version = "0.13.0"
+version = "0.14.0"
 dependencies = [
  "clap",
  "guicons-core",
@@ -2419,7 +2419,7 @@ dependencies = [
 
 [[package]]
 name = "guicons-core"
-version = "0.13.0"
+version = "0.14.0"
 dependencies = [
  "dunce",
  "insta",
@@ -2433,7 +2433,7 @@ dependencies = [
 
 [[package]]
 name = "guicons-macros"
-version = "0.13.0"
+version = "0.14.0"
 dependencies = [
  "guicons-core",
  "guicons-net",
@@ -2444,7 +2444,7 @@ dependencies = [
 
 [[package]]
 name = "guicons-net"
-version = "0.13.0"
+version = "0.14.0"
 dependencies = [
  "guicons-core",
  "hex",
@@ -6272,7 +6272,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.4.3",
+ "getrandom 0.3.4",
  "once_cell",
  "rustix 1.1.4",
  "windows-sys 0.61.2",
@@ -7544,9 +7544,9 @@ dependencies = [
 
 [[package]]
 name = "windows-reactor-pre"
-version = "0.103.0"
+version = "0.105.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d75c6053f154ce22dc02f27f4f89fb0cb74971a207dc2e570dcfd4d106501612"
+checksum = "4c0cdf616bd87c751b1cf11098335dac60521ecd629c725ce8ff32569ab4468c"
 dependencies = [
  "windows-collections 0.100.0",
  "windows-core 0.100.0",
@@ -7554,6 +7554,7 @@ dependencies = [
  "windows-reference",
  "windows-threading 0.100.0",
  "windows-time",
+ "windows-window-pre",
 ]
 
 [[package]]
@@ -7711,6 +7712,15 @@ name = "windows-time"
 version = "0.100.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "de136aac4d76b9ea94b2589774be8bcd91b31b2dd7dae54abdd63335590095e4"
+dependencies = [
+ "windows-core 0.100.0",
+]
+
+[[package]]
+name = "windows-window-pre"
+version = "0.104.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1ae79634c071f2bb8dbc23dd5223e784fff6131ffc0b0863e196332ba8ccb665"
 dependencies = [
  "windows-core 0.100.0",
 ]
