@@ -1,30 +1,17 @@
 name: E2E (fixture builds)
 
-# The fixture tests in crates/guicons-build/tests/fixture_crates.rs are
-# marked #[ignore] specifically so the fast, always-on `ci.yml` job skips
-# them - each one spawns a whole separate `cargo test` from scratch
-# against a fixture crate, several minutes rather than the usual
-# sub-second unit test. Running that on every single push (including a
-# patch-only version bump) would make CI slow for no real benefit, so
-# this only fires when the workspace's *minor* version changes
-# (`0.Y.Z` -> a different `Y`) - the pre-1.0 convention where a minor
-# bump is the "this might actually break something" release, unlike a
-# patch bump.
 on:
-  push:
-    branches: [master]
-    paths:
-      - "Cargo.toml"
+  workflow_call:
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  check-version-bump:
+  check-inputs:
     runs-on: ubuntu-latest
     outputs:
-      minor_bumped: ${{ steps.check.outputs.minor_bumped }}
+      required: ${{ steps.check.outputs.required }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -33,25 +20,20 @@ jobs:
 
       - id: check
         shell: bash
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.sha || github.event.before || 'HEAD^' }}
         run: |
-          new_version=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
-          new_minor=$(echo "$new_version" | cut -d. -f2)
-
-          old_version=$(git show "${{ github.event.before }}:Cargo.toml" 2>/dev/null | grep -m1 '^version' | cut -d'"' -f2 || true)
-          old_minor=$(echo "${old_version:-}" | cut -d. -f2)
-
-          echo "old version: ${old_version:-<none>}, new version: $new_version"
-          if [ "$new_minor" != "$old_minor" ]; then
-            echo "minor version changed ($old_minor -> $new_minor) - running e2e"
-            echo "minor_bumped=true" >> "$GITHUB_OUTPUT"
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ] ||
+             ! git cat-file -e "${BASE_REF}^{commit}" 2>/dev/null ||
+             ! git diff --quiet "$BASE_REF" HEAD -- Cargo.toml Cargo.lock crates .github/workflows/ci.yml .github/workflows/e2e.yml; then
+            echo "required=true" >> "$GITHUB_OUTPUT"
           else
-            echo "minor version unchanged - skipping e2e"
-            echo "minor_bumped=false" >> "$GITHUB_OUTPUT"
+            echo "required=false" >> "$GITHUB_OUTPUT"
           fi
 
   e2e:
-    needs: check-version-bump
-    if: needs.check-version-bump.outputs.minor_bumped == 'true' || github.event_name == 'workflow_dispatch'
+    needs: check-inputs
+    if: needs.check-inputs.outputs.required == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -78,4 +60,4 @@ jobs:
       # with software rendering, which a headless runner doesn't have.
       # xvfb-run gives it a fake one.
       - name: Run fixture e2e tests
-        run: xvfb-run -a cargo test -p guicons-build --test fixture_crates -- --ignored
+        run: xvfb-run -a cargo test -p guicons-build --test fixture_crates --locked -- --ignored

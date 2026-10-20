@@ -8,6 +8,9 @@ ignore = [
     { id = "RUSTSEC-2024-0436", reason = "paste: unmaintained, pulled in by the optional GUI backends" },
     { id = "RUSTSEC-2026-0206", reason = "rustybuzz: unmaintained, pulled in by the optional GUI backends' text stacks" },
     { id = "RUSTSEC-2026-0192", reason = "ttf-parser: unmaintained, pulled in by the optional GUI backends' text stacks" },
+    { id = "RUSTSEC-2026-0370", reason = "zvariant: unmaintained only; Slint/AccessKit require zbus 5 and zvariant 5. No patched standalone release exists; remove when these upstreams adopt zbus 6 wire types (z-galaxy/zbus#2043)." },
+    { id = "RUSTSEC-2026-0371", reason = "zbus_names: unmaintained only; Slint/AccessKit require zbus 5, which requires zbus_names 4. No patched standalone release exists; remove when these upstreams adopt zbus 6 names (z-galaxy/zbus#2043)." },
+    { id = "RUSTSEC-2026-0372", reason = "zvariant_derive: unmaintained only; required by the zvariant 5 used by Slint/AccessKit. No patched standalone release exists; remove when these upstreams adopt zbus 6 derives (z-galaxy/zbus#2043)." },
 ]
 
 [bans]

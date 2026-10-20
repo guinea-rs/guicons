@@ -5,8 +5,7 @@ use std::process::Command;
 // crate with a fresh, uncached target dir - a full from-scratch compile
 // every run, several minutes rather than the usual sub-second unit test.
 // Excluded from the normal `cargo test --workspace` CI job for exactly
-// that reason; run explicitly via `.github/workflows/e2e.yml`, gated to
-// pushes that bump the workspace's minor version (`0.Y.0`-style).
+// that reason; run explicitly via `.github/workflows/e2e.yml`.
 #[test]
 #[ignore = "slow: full nested cargo build from scratch - see module doc comment"]
 fn basic_file_variants_fixture_builds() {
