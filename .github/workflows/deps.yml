@@ -1,9 +1,6 @@
 name: deps
 
 on:
-  push:
-    branches: [master, main]
-  pull_request:
   schedule:
     - cron: "0 6 * * 1"
   workflow_dispatch:
