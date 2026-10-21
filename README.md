@@ -216,4 +216,9 @@ directly from memory without temporary files.
 Repository builds use Rust 1.99.1, pinned in `rust-toolchain.toml`.
 The published MSRV remains 1.95. Normal dev, test, release and bench
 profiles disable debug information, including the standalone fixture workspace.
+Windows CI also disables linker PDB output with `/DEBUG:NONE`.
+
+For local debugging, set `CARGO_PROFILE_DEV_DEBUG=2`. If your Cargo configuration
+disables MSVC PDBs, override it for that process with `RUSTFLAGS=-C link-arg=/DEBUG`,
+preserving any other required flags.
 
