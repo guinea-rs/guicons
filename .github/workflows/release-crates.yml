@@ -26,7 +26,13 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de
         with:
-          toolchain: stable
+          toolchain: "1.99.1"
+
+      - name: Verify compiler version
+        shell: bash
+        run: |
+          rustc --version
+          test "$(rustc --version | cut -d' ' -f2)" = "1.99.1"
 
       - name: Publish
         env:

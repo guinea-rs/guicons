@@ -211,3 +211,9 @@ in your app: native icon and view types from different `0.x` minor versions
 are incompatible. Embedded SVGs, including painted icons, are loaded
 directly from memory without temporary files.
 
+## Development
+
+Repository builds use Rust 1.99.1, pinned in `rust-toolchain.toml`.
+The published MSRV remains 1.95. Normal dev, test, release and bench
+profiles disable debug information, including the standalone fixture workspace.
+

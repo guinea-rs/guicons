@@ -25,7 +25,7 @@ jobs:
         run: |
           if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ] ||
              ! git cat-file -e "${BASE_REF}^{commit}" 2>/dev/null ||
-             ! git diff --quiet "$BASE_REF" HEAD -- Cargo.toml Cargo.lock crates .github/workflows/ci.yml .github/workflows/e2e.yml; then
+             ! git diff --quiet "$BASE_REF" HEAD -- Cargo.toml Cargo.lock rust-toolchain.toml crates .github/workflows/ci.yml .github/workflows/e2e.yml; then
             echo "required=true" >> "$GITHUB_OUTPUT"
           else
             echo "required=false" >> "$GITHUB_OUTPUT"
@@ -42,7 +42,13 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de
         with:
-          toolchain: stable
+          toolchain: "1.99.1"
+
+      - name: Verify compiler version
+        shell: bash
+        run: |
+          rustc --version
+          test "$(rustc --version | cut -d' ' -f2)" = "1.99.1"
 
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
 

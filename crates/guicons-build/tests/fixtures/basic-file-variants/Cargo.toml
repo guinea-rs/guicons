@@ -13,3 +13,15 @@ slint = "1.15.1"
 [build-dependencies]
 guicons-build = { path = "../../../../guicons-build" }
 slint-build = "1.15.1"
+
+[profile.dev]
+debug = 0
+
+[profile.test]
+debug = 0
+
+[profile.release]
+debug = 0
+
+[profile.bench]
+debug = 0
