@@ -2388,7 +2388,7 @@ checksum = "b40ca9252762c466af32d0b1002e91e4e1bc5398f77455e55474deb466355ff5"
 
 [[package]]
 name = "guicons"
-version = "0.14.1"
+version = "0.15.0"
 dependencies = [
  "egui",
  "guicons-macros",
@@ -2400,7 +2400,7 @@ dependencies = [
 
 [[package]]
 name = "guicons-build"
-version = "0.14.1"
+version = "0.15.0"
 dependencies = [
  "criterion",
  "guicons-core",
@@ -2412,7 +2412,7 @@ dependencies = [
 
 [[package]]
 name = "guicons-cli"
-version = "0.14.1"
+version = "0.15.0"
 dependencies = [
  "clap",
  "guicons-core",
@@ -2425,7 +2425,7 @@ dependencies = [
 
 [[package]]
 name = "guicons-core"
-version = "0.14.1"
+version = "0.15.0"
 dependencies = [
  "dunce",
  "insta",
@@ -2439,7 +2439,7 @@ dependencies = [
 
 [[package]]
 name = "guicons-macros"
-version = "0.14.1"
+version = "0.15.0"
 dependencies = [
  "guicons-core",
  "guicons-net",
@@ -2450,7 +2450,7 @@ dependencies = [
 
 [[package]]
 name = "guicons-net"
-version = "0.14.1"
+version = "0.15.0"
 dependencies = [
  "guicons-core",
  "hex",
@@ -7579,9 +7579,9 @@ dependencies = [
 
 [[package]]
 name = "windows-reactor-pre"
-version = "0.105.0"
+version = "0.106.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4c0cdf616bd87c751b1cf11098335dac60521ecd629c725ce8ff32569ab4468c"
+checksum = "fd854e2288ff853c82676949ccef3bbc7e1c1aa06c6b34fa584211d772713c03"
 dependencies = [
  "windows-collections 0.100.0",
  "windows-core 0.100.0",
