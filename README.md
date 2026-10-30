@@ -206,7 +206,7 @@ ui.add(egui::Image::new(guicons::icon!("mdi:home")).fit_to_exact_size(egui::vec2
 
 ### WinUI (`windows-reactor` feature)
 
-The adapter uses `windows-reactor-pre 0.106`. Use the same Reactor version
+The adapter uses `windows-reactor-pre 0.107`. Use the same Reactor version
 in your app: native icon and view types from different `0.x` minor versions
 are incompatible. Embedded SVGs, including painted icons, are loaded
 directly from memory without temporary files.
