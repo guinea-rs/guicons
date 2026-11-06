@@ -7579,9 +7579,9 @@ dependencies = [
 
 [[package]]
 name = "windows-reactor-pre"
-version = "0.107.0"
+version = "0.107.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eb4c51fe3bfd6c410dc61da8feb86357f379d21e66f265e2d4f66ee762d693f7"
+checksum = "cdf075c03bc19c8bd7ab048ff48f1ad776b8d11c22bb7fa309954c478c12ed02"
 dependencies = [
  "windows-collections 0.100.0",
  "windows-core 0.100.0",
