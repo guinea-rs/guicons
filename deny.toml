@@ -5,6 +5,7 @@ all-features = true
 version = 2
 yanked = "deny"
 ignore = [
+    { id = "RUSTSEC-2026-0441", reason = "pin-utils: unmaintained only; required by spin_on 0.1.1 in the optional slint-macros 1.17.1 backend. No compatible spin_on update removes it; remove this exception when Slint's macro stack replaces it with core::pin::pin! or pin-project." },
     { id = "RUSTSEC-2024-0436", reason = "paste: unmaintained, pulled in by the optional GUI backends" },
     { id = "RUSTSEC-2026-0206", reason = "rustybuzz: unmaintained, pulled in by the optional GUI backends' text stacks" },
     { id = "RUSTSEC-2026-0192", reason = "ttf-parser: unmaintained, pulled in by the optional GUI backends' text stacks" },
